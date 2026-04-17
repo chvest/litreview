@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Map Columns — {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <nav aria-label="breadcrumb" class="mb-3">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('import_papers', pid=project.id) }}">Import</a></li>
+        <li class="breadcrumb-item active">Map Columns</li>
+      </ol>
+    </nav>
+
+    <div class="card mb-4">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Map File Columns</h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted">Match each field to a column in your file. Only <strong>Title</strong> or <strong>DOI</strong> is required.</p>
+
+        <form method="post">
+          <div class="row g-3 mb-4">
+            {% set fields = [
+              ('col_title',    'Title',            True,  'bi-card-heading'),
+              ('col_authors',  'Authors',          False, 'bi-people'),
+              ('col_abstract', 'Abstract',         False, 'bi-text-paragraph'),
+              ('col_year',     'Publication Year', False, 'bi-calendar'),
+              ('col_doi',      'DOI',              False, 'bi-link-45deg'),
+              ('col_source',   'Source / Database',False, 'bi-database'),
+            ] %}
+            {% for name, label, required, icon in fields %}
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <i class="bi {{ icon }} me-1 text-muted"></i>{{ label }}
+                {% if required %}<span class="text-danger">*</span>{% endif %}
+              </label>
+              <select name="{{ name }}" class="form-select">
+                <option value="">— not mapped —</option>
+                {% for col in columns %}
+                <option value="{{ col }}"
+                  {% if col|lower == label|lower or col|lower == name[4:]|lower %}selected{% endif %}>
+                  {{ col }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endfor %}
+          </div>
+
+          <!-- Preview -->
+          {% if preview %}
+          <h6 class="mb-2">File preview (first 3 rows)</h6>
+          <div class="table-responsive mb-4">
+            <table class="table table-sm table-bordered small">
+              <thead class="table-light">
+                <tr>{% for col in columns %}<th>{{ col }}</th>{% endfor %}</tr>
+              </thead>
+              <tbody>
+                {% for row in preview %}
+                <tr>{% for col in columns %}<td class="text-truncate" style="max-width:160px">{{ row[col] }}</td>{% endfor %}</tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>Import Papers
+            </button>
+            <a href="{{ url_for('import_papers', pid=project.id) }}" class="btn btn-outline-secondary">Back</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

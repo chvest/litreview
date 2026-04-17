@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block title %}{{ stage_label }} — {{ paper.title[:60] if paper.title else 'Paper' }}{% endblock %}
+
+{% block content %}
+<!-- Pilot banner -->
+{% if active_pilot %}
+<div class="pilot-banner mb-3">
+  <i class="bi bi-cone-striped text-warning"></i>
+  <strong>Pilot review in progress</strong> — you are reviewing a calibration batch of
+  {{ active_pilot.papers | length }} papers.
+  <a href="{{ url_for('pilot_overview', pid=project.id) }}" class="ms-auto text-warning fw-semibold small text-nowrap">
+    Pilot overview →
+  </a>
+</div>
+{% endif %}
+
+<!-- Progress header -->
+<div class="d-flex align-items-center mb-3 gap-2">
+  {% if prev_paper_id %}
+  <a href="{{ url_for('review_paper', pid=project.id, stage=stage, paper_id=prev_paper_id) }}"
+     class="btn btn-sm btn-outline-secondary" title="Previous paper (←)">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  {% else %}
+  <button class="btn btn-sm btn-outline-secondary" disabled title="No previous paper">
+    <i class="bi bi-arrow-left"></i>
+  </button>
+  {% endif %}
+
+  <a href="{{ url_for('review_start', pid=project.id, stage=stage) }}"
+     class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-list-ul me-1"></i>Paper List
+  </a>
+
+  <div class="flex-grow-1">
+    <div class="d-flex justify-content-between small text-muted mb-1">
+      <span>
+        <strong>{{ stage_label }}</strong> &mdash;
+        <span class="text-primary">{{ reviewer.name }}</span>
+        &mdash; Paper {{ position }} of {{ stats.total }}
+      </span>
+      <span>{{ stats.done }} done, {{ stats.remaining }} remaining</span>
+    </div>
+    <div class="progress" style="height:6px">
+      <div class="progress-bar bg-success"
+           style="width:{{ ((stats.done / stats.total * 100)|int) if stats.total > 0 else 0 }}%">
+      </div>
+    </div>
+  </div>
+</div>
+
+<form method="post" id="reviewForm">
+<div class="review-layout">
+
+  <!-- Paper content -->
+  <div>
+    <div class="card mb-3">
+      <div class="card-body">
+
+        <!-- Title always shown -->
+        <h5 class="mb-1">{{ paper.title or '(no title)' }}</h5>
+
+        <div class="d-flex flex-wrap gap-2 text-muted small mb-3">
+          {% if paper.authors %}<span><i class="bi bi-people me-1"></i>{{ paper.authors }}</span>{% endif %}
+          {% if paper.year %}<span><i class="bi bi-calendar me-1"></i>{{ paper.year }}</span>{% endif %}
+          {% if paper.doi %}
+          <span>
+            <i class="bi bi-link-45deg me-1"></i>
+            <a href="https://doi.org/{{ paper.doi }}" target="_blank" class="text-muted">{{ paper.doi }}</a>
+          </span>
+          {% endif %}
+          {% if paper.source %}<span><i class="bi bi-database me-1"></i>{{ paper.source }}</span>{% endif %}
+        </div>
+
+        <!-- Abstract (shown for abstract and fulltext stages) -->
+        {% if stage in ('abstract', 'fulltext') %}
+        {% if paper.abstract %}
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">Abstract</span>
+          <div class="d-flex align-items-center gap-3">
+            {% if inclusion_criteria or exclusion_criteria %}
+            <!-- Highlight legend (shown when active) -->
+            <span class="hl-legend" id="hl-legend" style="display:none !important">
+              {% if inclusion_criteria %}
+              <span>
+                <span class="hl-legend-dot" style="background:rgba(25,135,84,.3)"></span>
+                Inclusion
+              </span>
+              {% endif %}
+              {% if exclusion_criteria %}
+              <span>
+                <span class="hl-legend-dot" style="background:rgba(220,53,69,.25)"></span>
+                Exclusion
+              </span>
+              {% endif %}
+            </span>
+            <button type="button" id="highlight-btn" class="btn btn-sm btn-outline-secondary"
+                    onclick="toggleHighlight()" title="Highlight criteria terms in abstract">
+              <i class="bi bi-magic me-1"></i>Highlight terms
+            </button>
+            {% endif %}
+          </div>
+        </div>
+        <div class="border rounded p-3" style="background:#fdfdff">
+          <div class="abstract-text" id="abstract-text">{{ paper.abstract }}</div>
+        </div>
+        {% else %}
+        <div class="alert alert-warning py-2 small">No abstract available.</div>
+        {% endif %}
+        {% endif %}
+
+        {% if stage == 'fulltext' %}
+        <div class="alert alert-info py-2 small mt-3 mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          Full-text review happens outside this tool. Record your decision below after reading the paper.
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+    <!-- Exclusion criteria checkboxes -->
+    {% if exclusion_criteria %}
+    <div class="card mb-3">
+      <div class="card-header bg-white py-2">
+        <span class="small fw-semibold text-danger">
+          <i class="bi bi-x-circle me-1"></i>Exclusion reason(s) — optional
+        </span>
+      </div>
+      <div class="card-body py-2">
+        <div class="row g-2">
+          {% for c in exclusion_criteria %}
+          <div class="col-md-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="exclusion_criteria"
+                     value="{{ c.id }}" id="ec_{{ c.id }}"
+                     {% if c.id|string in selected_exc %}checked{% endif %}>
+              <label class="form-check-label small" for="ec_{{ c.id }}">
+                <span class="badge bg-danger me-1">{{ c.code }}</span>{{ c.description }}
+              </label>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card mb-3">
+      <div class="card-body py-2">
+        <label class="form-label small fw-semibold mb-1">Notes <span class="text-muted fw-normal">(optional)</span></label>
+        <textarea name="notes" class="form-control form-control-sm" rows="2"
+                  placeholder="Any comments about this paper...">{{ existing.notes if existing else '' }}</textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Criteria sidebar -->
+  <div>
+    {% if inclusion_criteria or exclusion_criteria %}
+    <div class="card criteria-panel sticky-top" style="top:1rem">
+      <div class="card-header bg-white py-2">
+        <span class="small fw-semibold"><i class="bi bi-list-check me-1"></i>Review Criteria</span>
+      </div>
+      {% if inclusion_criteria %}
+      <div class="card-body py-2 pb-0">
+        <div class="small fw-semibold text-success mb-1">Inclusion</div>
+        <ul class="list-group list-group-flush mb-2">
+          {% for c in inclusion_criteria %}
+          <li class="list-group-item px-0 py-1 d-flex gap-2 align-items-start">
+            <span class="badge bg-success mt-1 flex-shrink-0">{{ c.code }}</span>
+            <span class="small">{{ c.description }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      {% if exclusion_criteria %}
+      <div class="card-body py-2 pt-0">
+        <div class="small fw-semibold text-danger mb-1">Exclusion</div>
+        <ul class="list-group list-group-flush">
+          {% for c in exclusion_criteria %}
+          <li class="list-group-item px-0 py-1 d-flex gap-2 align-items-start">
+            <span class="badge bg-danger mt-1 flex-shrink-0">{{ c.code }}</span>
+            <span class="small">{{ c.description }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="card-body small text-muted">
+        No criteria defined.
+        <a href="{{ url_for('manage_criteria', pid=project.id) }}">Add criteria</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- Decision bar (sticky bottom) -->
+<div class="decision-bar">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+
+    <button type="submit" name="decision" value="include"
+            class="btn btn-include btn-lg flex-grow-1" id="btn-include">
+      <i class="bi bi-check-lg me-1"></i>Include
+      <span class="kbd-hint"><kbd>I</kbd></span>
+    </button>
+    <button type="submit" name="decision" value="uncertain"
+            class="btn btn-uncertain btn-lg flex-grow-1" id="btn-uncertain">
+      <i class="bi bi-question-lg me-1"></i>Uncertain
+      <span class="kbd-hint"><kbd>U</kbd></span>
+    </button>
+    <button type="submit" name="decision" value="exclude"
+            class="btn btn-exclude btn-lg flex-grow-1" id="btn-exclude">
+      <i class="bi bi-x-lg me-1"></i>Exclude
+      <span class="kbd-hint"><kbd>E</kbd></span>
+    </button>
+
+    {% if existing %}
+    <div class="ms-1 small text-muted text-nowrap">
+      Current: <span class="badge badge-{{ existing.decision }}">{{ existing.decision }}</span>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Criteria data for highlighting ───────────────────────────────────────────
+const INC_CRITERIA = {{ inclusion_criteria | map(attribute='description') | list | tojson }};
+const EXC_CRITERIA = {{ exclusion_criteria | map(attribute='description') | list | tojson }};
+
+// ── Keyword highlight toggle ──────────────────────────────────────────────────
+const STOP_WORDS = new Set([
+  'that','this','with','from','have','been','were','they','their','there',
+  'when','which','will','more','also','into','than','then','some','such',
+  'used','using','study','studies','paper','article','review','based',
+  'between','within','after','before','during','about','these','those',
+  'both','each','most','other','data','results','analysis','findings',
+  'methods','method','patients','sample','group','groups','time','year',
+]);
+
+let originalText = null;
+let highlightOn = false;
+
+function escapeHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function extractWords(criteriaList) {
+  const words = new Set();
+  for (const desc of criteriaList) {
+    for (const w of (desc.toLowerCase().match(/[a-z]+/g) || [])) {
+      if (w.length >= 4 && !STOP_WORDS.has(w)) words.add(w);
+    }
+  }
+  return words;
+}
+
+function toggleHighlight() {
+  const el = document.getElementById('abstract-text');
+  const btn = document.getElementById('highlight-btn');
+  const legend = document.getElementById('hl-legend');
+  if (!el) return;
+
+  if (!originalText) originalText = el.textContent;
+
+  highlightOn = !highlightOn;
+
+  if (!highlightOn) {
+    el.textContent = originalText;
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-outline-secondary');
+    btn.innerHTML = '<i class="bi bi-magic me-1"></i>Highlight terms';
+    if (legend) legend.style.setProperty('display','none','important');
+    return;
+  }
+
+  const incWords = extractWords(INC_CRITERIA);
+  const excWords = extractWords(EXC_CRITERIA);
+  const allWords = new Set([...incWords, ...excWords]);
+
+  if (allWords.size === 0) {
+    highlightOn = false;
+    return;
+  }
+
+  const safe = [...allWords].map(w => w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  const pattern = new RegExp('\\b(' + safe.join('|') + ')\\b', 'gi');
+
+  let html = escapeHtml(originalText);
+  html = html.replace(pattern, (match) => {
+    const lower = match.toLowerCase();
+    const isInc = incWords.has(lower);
+    const isExc = excWords.has(lower);
+    if (isInc && isExc) return `<mark class="hl-both">${match}</mark>`;
+    if (isInc)          return `<mark class="hl-inc">${match}</mark>`;
+    return                     `<mark class="hl-exc">${match}</mark>`;
+  });
+
+  el.innerHTML = html;
+  btn.classList.remove('btn-outline-secondary');
+  btn.classList.add('btn-primary');
+  btn.innerHTML = '<i class="bi bi-magic me-1"></i>Remove highlights';
+  if (legend) legend.style.removeProperty('display');
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', function(e) {
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  const map = { 'i': 'include', 'e': 'exclude', 'u': 'uncertain' };
+  const decision = map[e.key.toLowerCase()];
+  if (decision) {
+    document.getElementById('btn-' + decision).click();
+    return;
+  }
+  // Left arrow → previous paper
+  if (e.key === 'ArrowLeft') {
+    {% if prev_paper_id %}
+    window.location = '{{ url_for("review_paper", pid=project.id, stage=stage, paper_id=prev_paper_id) }}';
+    {% endif %}
+  }
+});
+</script>
+{% endblock %}

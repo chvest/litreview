@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Import Papers — {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <nav aria-label="breadcrumb" class="mb-3">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+        <li class="breadcrumb-item active">Import Papers</li>
+      </ol>
+    </nav>
+
+    <div class="card">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-upload me-2 text-primary"></i>Import Papers from File</h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted">
+          Upload a <strong>CSV</strong> or <strong>Excel (.xlsx)</strong> file exported from a database
+          such as PubMed, Scopus, Web of Science, or any search tool.
+          You will map column names in the next step.
+        </p>
+
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Select file</label>
+            <input type="file" name="file" class="form-control" accept=".csv,.xlsx,.xls" required>
+            <div class="form-text">Supported: .csv, .xlsx, .xls — max 50 MB</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-arrow-right me-1"></i>Next: Map Columns
+            </button>
+            <a href="{{ url_for('project_dashboard', pid=project.id) }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6><i class="bi bi-info-circle me-2 text-info"></i>Tips</h6>
+        <ul class="small text-muted mb-0">
+          <li>Duplicate papers (same DOI or title) are automatically skipped.</li>
+          <li>You can import from multiple sources — all papers go into the same project.</li>
+          <li>Keep a <em>source</em> column if you want to track which database each paper came from.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Statistics — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Statistics</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+
+  <!-- Screening funnel -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-funnel me-2 text-primary"></i>Screening Funnel</h6>
+      </div>
+      <div class="card-body">
+        {% set max_count = funnel[0].count if funnel[0].count else 1 %}
+        {% for item in funnel %}
+        {% if loop.index == 1 %}
+          {% set count = item.count %}
+          {% set pct = 100 %}
+        {% else %}
+          {% set count = item.passed %}
+          {% set pct = ((count / funnel[0].count * 100)|int) if funnel[0].count > 0 else 0 %}
+        {% endif %}
+        <div class="mb-3">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="fw-semibold">{{ item.label }}</span>
+            <span class="text-muted">
+              {{ count }}
+              {% if loop.index > 1 and item.eligible is defined %}
+                <span class="text-muted">({{ item.eligible }} eligible)</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="progress" style="height:22px; border-radius:4px">
+            <div class="progress-bar funnel-bar
+                  {% if loop.index == 1 %}bg-primary
+                  {% elif loop.index == 2 %}bg-info
+                  {% elif loop.index == 3 %}bg-warning
+                  {% else %}bg-success{% endif %}"
+                 style="width:{{ pct }}%; min-width:2px">
+              {% if pct > 10 %}{{ pct }}%{% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+        <div class="mt-3 p-3 bg-success bg-opacity-10 rounded text-center">
+          <div class="fs-3 fw-bold text-success">{{ final_included }}</div>
+          <div class="small text-muted">Papers included after last reviewed stage</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Papers per year -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-bar-chart me-2 text-primary"></i>Included Papers by Year</h6>
+      </div>
+      <div class="card-body">
+        {% if years %}
+        <canvas id="yearChart" height="220"></canvas>
+        {% else %}
+        <p class="text-muted small">No year data available yet. Complete at least one review stage.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Exclusion reasons -->
+  {% if exclusion_counts %}
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-x-circle me-2 text-danger"></i>Exclusion Reasons</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="exclusionChart" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Per-reviewer counts -->
+  {% if reviewer_stats %}
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-people me-2 text-primary"></i>Reviews per Reviewer</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Reviewer</th>
+              <th class="text-center">Title</th>
+              <th class="text-center">Abstract</th>
+              <th class="text-center">Full-Text</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in reviewer_stats %}
+            <tr>
+              <td>{{ row.name }}</td>
+              <td class="text-center">{{ row.title }}</td>
+              <td class="text-center">{{ row.abstract }}</td>
+              <td class="text-center">{{ row.fulltext }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Export -->
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body d-flex gap-2 flex-wrap align-items-center">
+        <span class="fw-semibold me-2">Export results:</span>
+        {% for stage in ['title','abstract','fulltext'] %}
+        <a href="{{ url_for('export_papers', pid=project.id, stage=stage, decision='include') }}"
+           class="btn btn-sm btn-outline-success">
+          <i class="bi bi-download me-1"></i>Included after {{ stage }}
+        </a>
+        {% endfor %}
+        <a href="{{ url_for('export_papers', pid=project.id, stage='fulltext', decision='all') }}"
+           class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-download me-1"></i>All full-text decisions
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+{% if years %}
+new Chart(document.getElementById('yearChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ years | tojson }},
+    datasets: [{
+      label: 'Papers',
+      data: {{ year_counts | tojson }},
+      backgroundColor: 'rgba(13,110,253,0.7)',
+      borderColor: 'rgba(13,110,253,1)',
+      borderWidth: 1,
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, ticks: { stepSize: 1 } }
+    }
+  }
+});
+{% endif %}
+
+{% if exclusion_counts %}
+new Chart(document.getElementById('exclusionChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ exclusion_counts.keys() | map('string') | list | tojson }}.map(id => {
+      const labels = {{ criteria_labels | tojson }};
+      return labels[id] || ('Criterion ' + id);
+    }),
+    datasets: [{
+      label: 'Exclusions',
+      data: {{ exclusion_counts.values() | list | tojson }},
+      backgroundColor: 'rgba(220,53,69,0.7)',
+      borderColor: 'rgba(220,53,69,1)',
+      borderWidth: 1,
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+  }
+});
+{% endif %}
+</script>
+{% endblock %}

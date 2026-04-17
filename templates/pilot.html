@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Pilot Review — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Pilot Review</li>
+  </ol>
+</nav>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body">
+        <h6><i class="bi bi-info-circle me-2 text-info"></i>What is a pilot review?</h6>
+        <p class="small text-muted mb-0">
+          Before starting the full review, Kitchenham recommends that all reviewers independently screen
+          a small shared sample (typically 5–15%) to calibrate their interpretation of the criteria.
+          After the pilot you compare decisions using Cohen's κ and discuss discrepancies.
+          If agreement is acceptable you <strong>advance to full review</strong> (pilot decisions count);
+          otherwise <strong>refine the criteria</strong>, reset the pilot, and try again.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column justify-content-center text-center">
+        <a href="{{ url_for('kappa_analysis', pid=project.id) }}" class="btn btn-outline-primary">
+          <i class="bi bi-diagram-3 me-1"></i>View Cohen's κ
+        </a>
+        <div class="text-muted small mt-2">Compare pilot decisions between reviewers</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% for stage in stages %}
+{% set sd = stage_data[stage] %}
+<div class="card mb-4">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0">
+      <i class="bi bi-{% if stage == 'title' %}card-heading{% elif stage == 'abstract' %}text-paragraph{% else %}file-earmark-text{% endif %} me-2 text-primary"></i>
+      {{ stage_labels[stage] }}
+    </h6>
+    <div class="d-flex gap-2 align-items-center">
+      {% if sd.completed_count > 0 %}
+      <span class="badge bg-success">{{ sd.completed_count }} pilot{{ 's' if sd.completed_count > 1 }} completed</span>
+      {% endif %}
+      {% if sd.active %}
+      <span class="badge bg-warning text-dark">Pilot active — {{ sd.batch_size }} papers</span>
+      {% else %}
+      <span class="badge bg-light text-muted">No active pilot</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+
+    {% if sd.active %}
+    <!-- Active pilot: show progress + actions -->
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <h6 class="small fw-semibold text-muted text-uppercase mb-3" style="letter-spacing:.05em">Reviewer Progress</h6>
+        {% if sd.reviewer_progress %}
+        <div class="vstack gap-2">
+          {% for rp in sd.reviewer_progress %}
+          <div>
+            <div class="d-flex justify-content-between small mb-1">
+              <span>{{ rp.reviewer.name }}</span>
+              <span class="text-muted">{{ rp.done }} / {{ rp.total }}
+                {% if rp.done == rp.total %}<i class="bi bi-check-circle-fill text-success ms-1"></i>{% endif %}
+              </span>
+            </div>
+            <div class="progress" style="height:7px">
+              <div class="progress-bar {% if rp.done == rp.total %}bg-success{% else %}bg-primary{% endif %}"
+                   style="width:{{ rp.pct }}%"></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted small">No reviewers added yet.</p>
+        {% endif %}
+
+        <div class="mt-3">
+          <a href="{{ url_for('review_start', pid=project.id, stage=stage) }}"
+             class="btn btn-sm btn-primary me-2">
+            <i class="bi bi-play-fill me-1"></i>Go to {{ stage_labels[stage] }}
+          </a>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <h6 class="small fw-semibold text-muted text-uppercase mb-3" style="letter-spacing:.05em">Actions</h6>
+
+        <!-- Advance to full -->
+        <div class="card border-success mb-3">
+          <div class="card-body py-3">
+            <h6 class="text-success mb-1"><i class="bi bi-check2-all me-1"></i>Advance to Full Review</h6>
+            <p class="small text-muted mb-2">
+              Pilot agreement is acceptable. Move to full review.
+            </p>
+            <form method="post" action="{{ url_for('pilot_advance', pid=project.id) }}"
+                  onsubmit="return confirm('Advance to full review? All reviewers will be assigned the complete paper set.')">
+              <input type="hidden" name="stage" value="{{ stage }}">
+              <div class="mb-2">
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="keep_reviews" value="yes"
+                         id="keep_yes_{{ stage }}" checked>
+                  <label class="form-check-label small" for="keep_yes_{{ stage }}">Keep pilot decisions</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="keep_reviews" value="no"
+                         id="keep_no_{{ stage }}">
+                  <label class="form-check-label small" for="keep_no_{{ stage }}">Discard pilot decisions</label>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-sm btn-success w-100">
+                <i class="bi bi-arrow-right-circle me-1"></i>Advance to Full Review
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Refine / reset -->
+        <div class="card border-warning">
+          <div class="card-body py-3">
+            <h6 class="text-warning mb-1"><i class="bi bi-arrow-counterclockwise me-1"></i>Refine &amp; Redo</h6>
+            <p class="small text-muted mb-2">
+              Agreement is low — adjust criteria then reset pilot reviews so all reviewers start the batch over.
+            </p>
+            <div class="d-flex gap-2">
+              <a href="{{ url_for('manage_criteria', pid=project.id) }}"
+                 class="btn btn-sm btn-outline-warning flex-grow-1">
+                <i class="bi bi-list-check me-1"></i>Edit Criteria
+              </a>
+              <form method="post" action="{{ url_for('pilot_reset', pid=project.id) }}"
+                    onsubmit="return confirm('Reset all pilot reviews for {{ stage_labels[stage] }}? This cannot be undone.')">
+                <input type="hidden" name="stage" value="{{ stage }}">
+                <button type="submit" class="btn btn-sm btn-warning">
+                  <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Reviews
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    {% else %}
+    <!-- No active pilot: show generate form -->
+    <div class="row align-items-center">
+      <div class="col-lg-6">
+        <p class="text-muted small mb-3">
+          {% if sd.eligible_count == 0 %}
+          No eligible papers for this stage yet.
+          {% else %}
+          <strong>{{ sd.eligible_count }}</strong> papers eligible. Generate a pilot batch to start.
+          {% endif %}
+        </p>
+        {% if sd.eligible_count > 0 %}
+        <form method="post" action="{{ url_for('pilot_generate', pid=project.id) }}"
+              class="d-flex align-items-end gap-2 flex-wrap">
+          <input type="hidden" name="stage" value="{{ stage }}">
+          <div>
+            <label class="form-label small fw-semibold mb-1" for="pct_{{ stage }}">
+              Sample size
+            </label>
+            <div class="input-group input-group-sm" style="width:140px">
+              <input type="number" name="pct" id="pct_{{ stage }}"
+                     class="form-control" value="10" min="1" max="100">
+              <span class="input-group-text">%</span>
+            </div>
+            <div class="form-text" id="pct_hint_{{ stage }}">≈ {{ (sd.eligible_count * 0.1) | int }} papers</div>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary mb-3">
+            <i class="bi bi-shuffle me-1"></i>Generate Pilot Batch
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<script>
+// Update the paper count hint as user types
+(function() {
+  const input = document.getElementById('pct_{{ stage }}');
+  const hint  = document.getElementById('pct_hint_{{ stage }}');
+  if (!input || !hint) return;
+  input.addEventListener('input', function() {
+    const n = Math.max(1, Math.round({{ sd.eligible_count }} * (parseFloat(this.value) || 0) / 100));
+    hint.textContent = '≈ ' + n + ' paper' + (n !== 1 ? 's' : '');
+  });
+})();
+</script>
+{% endfor %}
+{% endblock %}

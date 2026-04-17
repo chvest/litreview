@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}{{ stage_label }} — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">{{ stage_label }}</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+
+  <!-- Left: reviewer select + start -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-person-check me-2 text-primary"></i>Reviewer</h5>
+      </div>
+      <div class="card-body">
+        {% if reviewer %}
+          <div class="d-flex align-items-center mb-3">
+            <span class="badge bg-primary me-2 fs-6">{{ reviewer.name }}</span>
+            <span class="text-muted small">active</span>
+          </div>
+          {% if stats %}
+          <div class="mb-3">
+            <div class="d-flex justify-content-between small text-muted mb-1">
+              <span>Progress</span>
+              <span>{{ stats.done }} / {{ stats.total }}</span>
+            </div>
+            <div class="progress" style="height:8px">
+              <div class="progress-bar bg-success"
+                   style="width:{{ ((stats.done / stats.total * 100)|int) if stats.total > 0 else 0 }}%">
+              </div>
+            </div>
+            <div class="small text-muted mt-1">{{ stats.remaining }} papers remaining</div>
+          </div>
+          {% endif %}
+
+          {% if stats and stats.remaining > 0 %}
+          <a href="{{ url_for('review_next', pid=project.id, stage=stage) }}"
+             class="btn btn-success w-100 mb-2">
+            <i class="bi bi-play-fill me-1"></i>
+            {% if stats.done == 0 %}Start Review{% else %}Continue Review{% endif %}
+          </a>
+          {% else %}
+          <div class="alert alert-success py-2 small mb-2">
+            <i class="bi bi-check-circle me-1"></i>All papers reviewed!
+          </div>
+          {% endif %}
+          <hr>
+        {% endif %}
+
+        {% if reviewers %}
+        <form method="post" action="{{ url_for('set_reviewer', pid=project.id, stage=stage) }}">
+          <label class="form-label fw-semibold small">Switch reviewer</label>
+          <select name="reviewer_id" class="form-select form-select-sm mb-2">
+            {% for r in reviewers %}
+            <option value="{{ r.id }}" {% if reviewer and r.id == reviewer.id %}selected{% endif %}>
+              {{ r.name }}
+            </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-outline-primary btn-sm w-100">Select</button>
+        </form>
+        {% else %}
+        <p class="text-muted small mb-2">No reviewers added yet.</p>
+        <a href="{{ url_for('manage_reviewers', pid=project.id) }}" class="btn btn-outline-primary btn-sm w-100">
+          Add Reviewers
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Stage info -->
+    <div class="card">
+      <div class="card-body small text-muted">
+        <div class="mb-1">
+          <strong>Eligible papers:</strong> {{ eligible_count }}
+        </div>
+        {% if stage == 'title' %}
+        <div>Reviewing titles (and authors/year). Decide if each paper is potentially relevant.</div>
+        {% elif stage == 'abstract' %}
+        <div>Reviewing abstracts of papers that passed title screening.</div>
+        {% else %}
+        <div>Recording full-text review decisions. Actual reading happens outside this tool.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: paper list -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Paper List</h6>
+        <span class="badge bg-secondary">{{ paper_list|length }} papers</span>
+      </div>
+      {% if paper_list %}
+      <div class="card-body p-0" style="max-height:70vh; overflow-y:auto">
+        <ul class="list-group list-group-flush">
+          {% for pos, paper, review in paper_list %}
+          <li class="list-group-item paper-list-item
+                {% if review %}done-{{ review.decision }}{% else %}undone{% endif %}"
+              onclick="window.location='{{ url_for('review_paper', pid=project.id, stage=stage, paper_id=paper.id) }}'">
+            <div class="d-flex justify-content-between align-items-start">
+              <div class="me-2" style="min-width:0">
+                <span class="text-muted small me-2">#{{ pos }}</span>
+                <span class="small fw-semibold">{{ paper.title or '(no title)' }}</span>
+                {% if paper.authors %}
+                <div class="text-muted" style="font-size:.78rem">{{ paper.authors[:80] }}{% if paper.authors|length > 80 %}…{% endif %}</div>
+                {% endif %}
+              </div>
+              <div class="text-nowrap ms-2">
+                {% if paper.year %}<span class="badge bg-light text-dark me-1">{{ paper.year }}</span>{% endif %}
+                {% if review %}
+                  {% if review.decision == 'include' %}
+                    <span class="badge badge-include">Include</span>
+                  {% elif review.decision == 'exclude' %}
+                    <span class="badge badge-exclude">Exclude</span>
+                  {% else %}
+                    <span class="badge badge-uncertain">Uncertain</span>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+      <div class="card-body text-muted small">
+        {% if not reviewer %}
+        Select a reviewer to see the paper list.
+        {% elif eligible_count == 0 %}
+        No eligible papers for this stage yet.
+        {% else %}
+        The review order will be generated when you start.
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

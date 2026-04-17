@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Cohen's κ — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Cohen's κ</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+
+  <!-- Selector -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-sliders me-2 text-primary"></i>Compare Reviewers</h6>
+      </div>
+      <div class="card-body">
+        <form method="get">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Stage</label>
+            <select name="stage" class="form-select">
+              {% for s in stages %}
+              <option value="{{ s }}" {% if s == stage %}selected{% endif %}>
+                {{ stage_labels[s] }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Reviewer 1</label>
+            <select name="r1" class="form-select">
+              <option value="">— select —</option>
+              {% for r in reviewers %}
+              <option value="{{ r.id }}" {% if r1 and r.id == r1.id %}selected{% endif %}>{{ r.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Reviewer 2</label>
+            <select name="r2" class="form-select">
+              <option value="">— select —</option>
+              {% for r in reviewers %}
+              <option value="{{ r.id }}" {% if r2 and r.id == r2.id %}selected{% endif %}>{{ r.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">Calculate</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-body small">
+        <h6>Kappa interpretation</h6>
+        <table class="table table-sm table-borderless mb-0">
+          <tbody>
+            <tr><td>&lt; 0</td><td class="text-danger">Poor</td></tr>
+            <tr><td>0.01–0.20</td><td>Slight</td></tr>
+            <tr><td>0.21–0.40</td><td>Fair</td></tr>
+            <tr><td>0.41–0.60</td><td class="text-warning">Moderate</td></tr>
+            <tr><td>0.61–0.80</td><td class="text-primary">Substantial</td></tr>
+            <tr><td>0.81–1.00</td><td class="text-success">Almost Perfect</td></tr>
+          </tbody>
+        </table>
+        <p class="text-muted mb-0 mt-2">
+          Based on Landis &amp; Koch (1977). A kappa ≥ 0.6 is generally considered acceptable
+          for systematic reviews (Kitchenham et al.).
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="col-lg-8">
+
+    {% if kappa_result %}
+    <div class="card mb-4">
+      <div class="card-body text-center py-4">
+        <div class="text-muted mb-1">Cohen's κ — {{ stage_labels[stage] }}</div>
+        <div class="display-3 fw-bold
+          {% if kappa_result.value >= 0.8 %}text-success
+          {% elif kappa_result.value >= 0.6 %}text-primary
+          {% elif kappa_result.value >= 0.4 %}text-warning
+          {% else %}text-danger{% endif %}">
+          {{ kappa_result.value }}
+        </div>
+        <div class="fs-5 mt-1">{{ kappa_result.interpretation }}</div>
+        <div class="text-muted small mt-2">
+          Based on {{ kappa_result.n_papers }} papers reviewed by both
+          <strong>{{ r1.name }}</strong> and <strong>{{ r2.name }}</strong>
+        </div>
+      </div>
+    </div>
+
+    {% if agreement_matrix %}
+    <div class="card mb-4">
+      <div class="card-header bg-white">
+        <h6 class="mb-0">Agreement Matrix</h6>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-bordered text-center mb-0">
+            <thead class="table-light">
+              <tr>
+                <th></th>
+                <th colspan="3" class="text-muted small">{{ r2.name }} →</th>
+              </tr>
+              <tr>
+                <th class="text-muted small text-start">{{ r1.name }} ↓</th>
+                <th><span class="badge badge-include">Include</span></th>
+                <th><span class="badge badge-uncertain">Uncertain</span></th>
+                <th><span class="badge badge-exclude">Exclude</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set row_labels = ['include', 'uncertain', 'exclude'] %}
+              {% for i in range(3) %}
+              <tr>
+                <td class="text-start">
+                  {% if i == 0 %}<span class="badge badge-include">Include</span>
+                  {% elif i == 1 %}<span class="badge badge-uncertain">Uncertain</span>
+                  {% else %}<span class="badge badge-exclude">Exclude</span>{% endif %}
+                </td>
+                {% for j in range(3) %}
+                <td class="{% if i == j %}table-success fw-bold{% endif %}">
+                  {{ agreement_matrix[i][j] }}
+                </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="text-muted small mt-2">Diagonal (green) = agreement</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if conflicts %}
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between">
+        <h6 class="mb-0"><i class="bi bi-exclamation-triangle me-2 text-warning"></i>Conflicts</h6>
+        <span class="badge bg-warning text-dark">{{ conflicts|length }}</span>
+      </div>
+      <div class="card-body p-0" style="max-height:40vh;overflow-y:auto">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th>Paper</th>
+              <th>{{ r1.name }}</th>
+              <th>{{ r2.name }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in conflicts %}
+            <tr>
+              <td>
+                <a href="{{ url_for('review_paper', pid=project.id, stage=stage, paper_id=c.paper.id) }}"
+                   class="text-decoration-none text-dark">
+                  {{ c.paper.title[:80] if c.paper.title else '(no title)' }}
+                  {% if c.paper.title and c.paper.title|length > 80 %}…{% endif %}
+                </a>
+              </td>
+              <td><span class="badge badge-{{ c.d1 }}">{{ c.d1 }}</span></td>
+              <td><span class="badge badge-{{ c.d2 }}">{{ c.d2 }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% elif r1 and r2 %}
+    <div class="card">
+      <div class="card-body text-muted">
+        Not enough overlapping reviews to calculate kappa.
+        Both reviewers need to have reviewed the same papers in the selected stage.
+      </div>
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="card-body text-muted">
+        Select two reviewers and a stage, then click <strong>Calculate</strong>.
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

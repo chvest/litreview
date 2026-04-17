@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Reviewers — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Reviewers</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-people me-2 text-primary"></i>Reviewers</h5>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addReviewerModal">
+          <i class="bi bi-plus-lg me-1"></i>Add Reviewer
+        </button>
+      </div>
+      <div class="card-body p-0">
+        {% if reviewer_stats %}
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th class="text-center">Title</th>
+              <th class="text-center">Abstract</th>
+              <th class="text-center">Full-Text</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for reviewer, stats in reviewer_stats %}
+            <tr>
+              <td class="fw-semibold">{{ reviewer.name }}</td>
+              <td class="text-center">
+                <span class="badge bg-light text-dark">{{ stats.title }}</span>
+              </td>
+              <td class="text-center">
+                <span class="badge bg-light text-dark">{{ stats.abstract }}</span>
+              </td>
+              <td class="text-center">
+                <span class="badge bg-light text-dark">{{ stats.fulltext }}</span>
+              </td>
+              <td class="text-end">
+                <form method="post"
+                      action="{{ url_for('delete_reviewer', pid=project.id, rid=reviewer.id) }}"
+                      onsubmit="return confirm('Remove {{ reviewer.name }} and all their reviews?')">
+                  <button type="submit" class="btn btn-link btn-sm text-danger p-0">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted p-4 mb-0">No reviewers yet. Add at least one to start reviewing.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-body">
+        <h6><i class="bi bi-info-circle me-2 text-info"></i>How reviewers work</h6>
+        <ul class="small text-muted mb-0">
+          <li class="mb-1">Each reviewer gets their own independent, randomized paper order.</li>
+          <li class="mb-1">At the start of a review session, select your name to continue where you left off.</li>
+          <li class="mb-1">Combine results and measure agreement on the <strong>Cohen's κ</strong> page.</li>
+          <li>A paper advances to the next stage if at least one reviewer did not exclude it.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Reviewer Modal -->
+<div class="modal fade" id="addReviewerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="post" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Reviewer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+          <input type="text" name="name" class="form-control" required autofocus
+                 placeholder="e.g. Alice">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

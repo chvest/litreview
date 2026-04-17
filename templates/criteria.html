@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Criteria — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Criteria</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+
+  <!-- Inclusion criteria -->
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header bg-success bg-opacity-10 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 text-success"><i class="bi bi-check-circle me-2"></i>Inclusion Criteria</h6>
+        <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#addCriterionModal"
+                onclick="setCriterionType('inclusion')">
+          <i class="bi bi-plus-lg"></i>
+        </button>
+      </div>
+      <div class="card-body p-0">
+        {% if inclusion %}
+        <ul class="list-group list-group-flush">
+          {% for c in inclusion %}
+          <li class="list-group-item d-flex justify-content-between align-items-start">
+            <div>
+              <span class="badge bg-success me-2">{{ c.code }}</span>
+              {{ c.description }}
+            </div>
+            <form method="post" action="{{ url_for('delete_criterion', pid=project.id, cid=c.id) }}"
+                  onsubmit="return confirm('Delete this criterion?')">
+              <button type="submit" class="btn btn-link btn-sm text-danger p-0 ms-2">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted p-3 mb-0 small">No inclusion criteria yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Exclusion criteria -->
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 text-danger"><i class="bi bi-x-circle me-2"></i>Exclusion Criteria</h6>
+        <button class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#addCriterionModal"
+                onclick="setCriterionType('exclusion')">
+          <i class="bi bi-plus-lg"></i>
+        </button>
+      </div>
+      <div class="card-body p-0">
+        {% if exclusion %}
+        <ul class="list-group list-group-flush">
+          {% for c in exclusion %}
+          <li class="list-group-item d-flex justify-content-between align-items-start">
+            <div>
+              <span class="badge bg-danger me-2">{{ c.code }}</span>
+              {{ c.description }}
+            </div>
+            <form method="post" action="{{ url_for('delete_criterion', pid=project.id, cid=c.id) }}"
+                  onsubmit="return confirm('Delete this criterion?')">
+              <button type="submit" class="btn btn-link btn-sm text-danger p-0 ms-2">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted p-3 mb-0 small">No exclusion criteria yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="mt-3 text-muted small">
+  <i class="bi bi-info-circle me-1"></i>
+  Criteria are shown as a reference panel during every review stage.
+  Exclusion criteria can be linked to individual paper decisions.
+</div>
+
+<!-- Add Criterion Modal -->
+<div class="modal fade" id="addCriterionModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="post" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Criterion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" name="type" id="criterionType" value="inclusion">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Type</label>
+          <div id="criterionTypeBadge" class="badge bg-success fs-6">Inclusion</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Code <span class="text-muted fw-normal">(optional, e.g. IC1)</span></label>
+          <input type="text" name="code" class="form-control" placeholder="Auto-assigned if blank">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Description <span class="text-danger">*</span></label>
+          <textarea name="description" class="form-control" rows="3" required
+                    placeholder="e.g. Studies published after 2010"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Criterion</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function setCriterionType(type) {
+  document.getElementById('criterionType').value = type;
+  const badge = document.getElementById('criterionTypeBadge');
+  if (type === 'inclusion') {
+    badge.textContent = 'Inclusion';
+    badge.className = 'badge bg-success fs-6';
+  } else {
+    badge.textContent = 'Exclusion';
+    badge.className = 'badge bg-danger fs-6';
+  }
+}
+</script>
+{% endblock %}

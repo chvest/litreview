@@ -1,0 +1,144 @@
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+body { background: #f8f9fa; }
+
+.card { border: none; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.card-header { font-weight: 600; }
+
+/* ── Review paper layout ─────────────────────────────────────────────────── */
+.review-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 992px) {
+  .review-layout { grid-template-columns: 1fr; }
+}
+
+/* ── Abstract ────────────────────────────────────────────────────────────── */
+.abstract-text {
+  font-size: 1.05rem;
+  line-height: 1.9;
+  color: #1c2b3a;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+/* Subtle scrollbar for abstract */
+.abstract-text::-webkit-scrollbar { width: 5px; }
+.abstract-text::-webkit-scrollbar-track { background: transparent; }
+.abstract-text::-webkit-scrollbar-thumb { background: #ced4da; border-radius: 4px; }
+
+/* ── Criteria highlight marks ────────────────────────────────────────────── */
+mark.hl-inc {
+  background: rgba(25, 135, 84, 0.16);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 500;
+}
+mark.hl-exc {
+  background: rgba(220, 53, 69, 0.14);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 500;
+}
+mark.hl-both {
+  background: rgba(13, 110, 253, 0.13);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 500;
+}
+
+/* ── Decision bar ────────────────────────────────────────────────────────── */
+.decision-bar {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  border-top: 1px solid #dee2e6;
+  padding: .75rem 1rem;
+  z-index: 10;
+  box-shadow: 0 -2px 8px rgba(0,0,0,.07);
+}
+
+.btn-include {
+  --bs-btn-bg: #198754; --bs-btn-border-color: #198754; --bs-btn-color: #fff;
+  --bs-btn-hover-bg: #157347; --bs-btn-hover-border-color: #146c43; --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #146c43; --bs-btn-active-border-color: #13653f; --bs-btn-active-color: #fff;
+}
+.btn-exclude {
+  --bs-btn-bg: #dc3545; --bs-btn-border-color: #dc3545; --bs-btn-color: #fff;
+  --bs-btn-hover-bg: #bb2d3b; --bs-btn-hover-border-color: #b02a37; --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #b02a37; --bs-btn-active-border-color: #a52834; --bs-btn-active-color: #fff;
+}
+.btn-uncertain {
+  --bs-btn-bg: #fd7e14; --bs-btn-border-color: #fd7e14; --bs-btn-color: #fff;
+  --bs-btn-hover-bg: #e8710c; --bs-btn-hover-border-color: #da6a0b; --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #da6a0b; --bs-btn-active-border-color: #cc640a; --bs-btn-active-color: #fff;
+}
+
+/* ── Decision badges ─────────────────────────────────────────────────────── */
+.badge-include   { background: #198754; color: #fff; }
+.badge-exclude   { background: #dc3545; color: #fff; }
+.badge-uncertain { background: #fd7e14; color: #fff; }
+
+/* ── Criteria panel ──────────────────────────────────────────────────────── */
+.criteria-panel { font-size: .875rem; }
+.criteria-panel .list-group-item { padding: .35rem .75rem; }
+.criteria-panel .badge { font-size: .75rem; min-width: 2.5rem; }
+
+/* ── Progress bar label ──────────────────────────────────────────────────── */
+.progress-label { font-size: .78rem; color: #6c757d; }
+
+/* ── Funnel chart ────────────────────────────────────────────────────────── */
+.funnel-bar { transition: width .4s ease; }
+
+/* ── Paper list in review start ──────────────────────────────────────────── */
+.paper-list-item { cursor: pointer; }
+.paper-list-item:hover { background: #f0f4ff; }
+.paper-list-item.done-include { border-left: 3px solid #198754; }
+.paper-list-item.done-exclude { border-left: 3px solid #dc3545; }
+.paper-list-item.done-uncertain { border-left: 3px solid #fd7e14; }
+.paper-list-item.undone { border-left: 3px solid #dee2e6; }
+
+/* ── Keyboard shortcut hints ─────────────────────────────────────────────── */
+.kbd-hint { font-size: .72rem; color: #adb5bd; display: block; margin-top: .15rem; }
+kbd {
+  background: #e9ecef;
+  border: 1px solid #ced4da;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: .78rem;
+  color: #495057;
+}
+
+/* ── Pilot banner ────────────────────────────────────────────────────────── */
+.pilot-banner {
+  background: linear-gradient(90deg, #fff3cd, #fff8e1);
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  padding: .55rem 1rem;
+  font-size: .875rem;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+/* ── Highlight legend ────────────────────────────────────────────────────── */
+.hl-legend {
+  display: inline-flex;
+  gap: .6rem;
+  font-size: .78rem;
+  align-items: center;
+}
+.hl-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
