@@ -142,3 +142,67 @@ kbd {
   height: 10px;
   border-radius: 2px;
 }
+
+/* ── Dark mode overrides ─────────────────────────────────────────────────── */
+
+/* Body background is slightly deeper than Bootstrap's default #212529 */
+[data-bs-theme="dark"] body {
+  background: #181a1b;
+}
+
+/* Cards get a subtly lighter surface so they lift off the background */
+[data-bs-theme="dark"] .card {
+  background-color: #212529;
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+
+/* Sticky decision bar */
+[data-bs-theme="dark"] .decision-bar {
+  background: #212529;
+  border-top-color: #373b3e;
+  box-shadow: 0 -2px 8px rgba(0,0,0,.35);
+}
+
+/* Abstract text — soften pure white */
+[data-bs-theme="dark"] .abstract-text {
+  color: #cdd3d8;
+}
+
+/* The little box wrapping the abstract */
+[data-bs-theme="dark"] .border.rounded {
+  background: #1e2124 !important;
+  border-color: #373b3e !important;
+}
+
+/* Paper list hover */
+[data-bs-theme="dark"] .paper-list-item:hover {
+  background: #1a2133;
+}
+
+/* Pilot banner */
+[data-bs-theme="dark"] .pilot-banner {
+  background: linear-gradient(90deg, #2e2600, #272000);
+  border-color: #6b5300;
+  color: #f0c040;
+}
+
+/* Criteria highlight marks — slightly more saturated in dark */
+[data-bs-theme="dark"] mark.hl-inc {
+  background: rgba(40, 167, 69, 0.28);
+  color: inherit;
+}
+[data-bs-theme="dark"] mark.hl-exc {
+  background: rgba(220, 53, 69, 0.26);
+  color: inherit;
+}
+[data-bs-theme="dark"] mark.hl-both {
+  background: rgba(13, 110, 253, 0.28);
+  color: inherit;
+}
+
+/* kbd chip */
+[data-bs-theme="dark"] kbd {
+  background: #2c3034;
+  border-color: #495057;
+  color: #adb5bd;
+}

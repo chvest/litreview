@@ -27,6 +27,7 @@
               <th class="text-center">Title</th>
               <th class="text-center">Abstract</th>
               <th class="text-center">Full-Text</th>
+              <th class="text-end">Export decisions</th>
               <th></th>
             </tr>
           </thead>
@@ -42,6 +43,30 @@
               </td>
               <td class="text-center">
                 <span class="badge bg-light text-dark">{{ stats.fulltext }}</span>
+              </td>
+              <td class="text-end">
+                <div class="dropdown">
+                  <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                          data-bs-toggle="dropdown"
+                          {% if not (stats.title or stats.abstract or stats.fulltext) %}disabled{% endif %}>
+                    <i class="bi bi-download me-1"></i>Export
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end">
+                    <li><h6 class="dropdown-header small">Importable format (0/0.5/1)</h6></li>
+                    {% for stage in ['title','abstract','fulltext'] %}
+                    {% set stage_label = {'title':'Title','abstract':'Abstract','fulltext':'Full-Text'} %}
+                    <li>
+                      <a class="dropdown-item {% if not stats[stage] %}disabled text-muted{% endif %}"
+                         href="{{ url_for('export_reviews', pid=project.id, stage=stage, reviewer_id=reviewer.id) }}">
+                        {{ stage_label[stage] }} review
+                        {% if stats[stage] %}
+                        <span class="badge bg-secondary ms-1">{{ stats[stage] }}</span>
+                        {% endif %}
+                      </a>
+                    </li>
+                    {% endfor %}
+                  </ul>
+                </div>
               </td>
               <td class="text-end">
                 <form method="post"

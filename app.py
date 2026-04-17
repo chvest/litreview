@@ -211,6 +211,33 @@ def interpret_kappa(k):
     return "Almost Perfect"
 
 
+def normalize_title(t):
+    """Lowercase, collapse whitespace — used for fuzzy title matching."""
+    return " ".join(str(t).lower().strip().split()) if t else ""
+
+
+def normalize_doi(d):
+    """Strip common prefixes and lowercase for DOI comparison."""
+    s = str(d).strip().lower()
+    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    return s
+
+
+def parse_decision_value(val):
+    """Map 0 / 0.5 / 1 (and string variants) to include / uncertain / exclude."""
+    try:
+        v = float(str(val).replace(",", ".").strip())
+    except (ValueError, TypeError):
+        return None
+    if v < 0.25:
+        return "exclude"
+    if v < 0.75:
+        return "uncertain"
+    return "include"
+
+
 def current_reviewer(pid):
     rid = session.get(f"reviewer_{pid}")
     if not rid:
@@ -363,6 +390,157 @@ def import_columns(pid):
 
     return render_template("column_map.html", project=project,
                            columns=columns, preview=preview)
+
+
+# ── Import reviews ────────────────────────────────────────────────────────────
+
+@app.route("/project/<int:pid>/import-reviews", methods=["GET", "POST"])
+def import_reviews_upload(pid):
+    project = Project.query.get_or_404(pid)
+    if request.method == "POST":
+        f = request.files.get("file")
+        if not f or f.filename == "":
+            flash("No file selected.", "danger")
+            return redirect(request.url)
+        filename = secure_filename(f.filename)
+        filepath = os.path.join(app.config["UPLOAD_FOLDER"], "rev_" + filename)
+        f.save(filepath)
+        try:
+            df = pd.read_csv(filepath, encoding="utf-8-sig") if filename.lower().endswith(".csv") else pd.read_excel(filepath)
+        except Exception as e:
+            flash(f"Error reading file: {e}", "danger")
+            return redirect(request.url)
+
+        session["rev_import_file"] = filepath
+        session["rev_import_columns"] = list(df.columns)
+        session["rev_import_preview"] = df.head(3).fillna("").astype(str).to_dict("records")
+
+        # Show unique decision values to help the user identify the right column
+        value_samples = {}
+        for col in df.columns:
+            unique = df[col].dropna().unique()[:6]
+            value_samples[col] = [str(v) for v in unique]
+        session["rev_import_value_samples"] = value_samples
+
+        return redirect(url_for("import_reviews_map", pid=pid))
+    return render_template("import_reviews.html", project=project)
+
+
+@app.route("/project/<int:pid>/import-reviews/map", methods=["GET", "POST"])
+def import_reviews_map(pid):
+    project = Project.query.get_or_404(pid)
+    if "rev_import_file" not in session:
+        return redirect(url_for("import_reviews_upload", pid=pid))
+
+    columns       = session.get("rev_import_columns", [])
+    preview       = session.get("rev_import_preview", [])
+    value_samples = session.get("rev_import_value_samples", {})
+    reviewers     = Reviewer.query.filter_by(project_id=pid).all()
+
+    if request.method == "POST":
+        col_title    = request.form.get("col_title")
+        col_decision = request.form.get("col_decision")
+        col_doi      = request.form.get("col_doi") or None
+        stage        = request.form.get("stage", "title")
+        overwrite    = request.form.get("overwrite") == "yes"
+
+        # Resolve / create reviewer
+        reviewer_mode = request.form.get("reviewer_mode", "existing")
+        if reviewer_mode == "new":
+            new_name = request.form.get("new_reviewer_name", "").strip()
+            if not new_name:
+                flash("Enter a name for the new reviewer.", "danger")
+                return redirect(request.url)
+            reviewer = Reviewer.query.filter_by(project_id=pid, name=new_name).first()
+            if not reviewer:
+                reviewer = Reviewer(project_id=pid, name=new_name)
+                db.session.add(reviewer)
+                db.session.commit()
+        else:
+            rid = request.form.get("existing_reviewer_id", type=int)
+            reviewer = Reviewer.query.get(rid) if rid else None
+            if not reviewer or reviewer.project_id != pid:
+                flash("Select a valid reviewer.", "danger")
+                return redirect(request.url)
+
+        if not col_title or not col_decision:
+            flash("Title and Decision columns are required.", "danger")
+            return redirect(request.url)
+
+        filepath = session["rev_import_file"]
+        try:
+            df = pd.read_csv(filepath, encoding="utf-8-sig") if filepath.lower().endswith(".csv") else pd.read_excel(filepath)
+        except Exception as e:
+            flash(f"Error reading file: {e}", "danger")
+            return redirect(url_for("import_reviews_upload", pid=pid))
+
+        # Build lookup dicts for existing papers
+        papers = Paper.query.filter_by(project_id=pid).all()
+        title_map = {normalize_title(p.title): p for p in papers if p.title}
+        doi_map   = {normalize_doi(p.doi): p   for p in papers if p.doi}
+
+        imported = skipped = unmatched = bad_value = 0
+
+        for _, row in df.iterrows():
+            raw_title    = str(row.get(col_title, "") or "").strip()
+            raw_decision = row.get(col_decision)
+            raw_doi      = str(row.get(col_doi, "") or "").strip() if col_doi else ""
+
+            decision = parse_decision_value(raw_decision)
+            if decision is None:
+                bad_value += 1
+                continue
+
+            # Match paper: DOI first, then title
+            paper = None
+            if raw_doi:
+                paper = doi_map.get(normalize_doi(raw_doi))
+            if paper is None and raw_title:
+                paper = title_map.get(normalize_title(raw_title))
+            if paper is None:
+                unmatched += 1
+                continue
+
+            existing = Review.query.filter_by(
+                paper_id=paper.id, reviewer_id=reviewer.id, stage=stage
+            ).first()
+
+            if existing:
+                if overwrite:
+                    existing.decision = decision
+                    existing.notes = f"[imported]"
+                    imported += 1
+                else:
+                    skipped += 1
+            else:
+                db.session.add(Review(
+                    paper_id=paper.id, reviewer_id=reviewer.id,
+                    stage=stage, decision=decision, notes="[imported]"
+                ))
+                imported += 1
+
+        db.session.commit()
+
+        # Create review order for this reviewer so they appear correctly on the
+        # review start page (ensure_review_order skips if order already exists)
+        ensure_review_order(reviewer.id, pid, stage)
+
+        for key in ("rev_import_file", "rev_import_columns",
+                    "rev_import_preview", "rev_import_value_samples"):
+            session.pop(key, None)
+
+        parts = [f"Imported {imported} review decision(s)"]
+        if skipped:    parts.append(f"{skipped} skipped (already reviewed)")
+        if unmatched:  parts.append(f"{unmatched} rows had no matching paper")
+        if bad_value:  parts.append(f"{bad_value} rows had an unrecognised decision value")
+        flash(". ".join(parts) + ".", "success" if imported else "warning")
+        return redirect(url_for("project_dashboard", pid=pid))
+
+    return render_template("import_reviews_map.html", project=project,
+                           columns=columns, preview=preview,
+                           value_samples=value_samples,
+                           reviewers=reviewers,
+                           stages=STAGES, stage_labels=STAGE_LABELS)
 
 
 # ── Criteria ──────────────────────────────────────────────────────────────────
@@ -879,6 +1057,102 @@ def export_papers(pid):
     df.to_csv(out, index=False)
     return send_file(out, as_attachment=True,
                      download_name=f"{project.name}_{stage}_{decision_filter}.csv")
+
+
+# ── Export review decisions ───────────────────────────────────────────────────
+
+DECISION_TO_NUM = {"include": 1, "uncertain": 0.5, "exclude": 0}
+
+
+@app.route("/project/<int:pid>/export-reviews")
+def export_reviews(pid):
+    """Per-reviewer export in the importable 0/0.5/1 format."""
+    project     = Project.query.get_or_404(pid)
+    stage       = request.args.get("stage", "title")
+    reviewer_id = request.args.get("reviewer_id", type=int)
+    reviewer    = Reviewer.query.get_or_404(reviewer_id)
+
+    if reviewer.project_id != pid:
+        return redirect(url_for("manage_reviewers", pid=pid))
+
+    reviews = (Review.query
+               .filter_by(reviewer_id=reviewer_id, stage=stage)
+               .join(Paper).filter(Paper.project_id == pid)
+               .all())
+
+    rows = [{
+        "Title":    r.paper.title or "",
+        "DOI":      r.paper.doi   or "",
+        "Authors":  r.paper.authors or "",
+        "Year":     r.paper.year  or "",
+        "Decision": DECISION_TO_NUM.get(r.decision, ""),
+        "Notes":    r.notes or "",
+    } for r in reviews]
+
+    df  = pd.DataFrame(rows)
+    out = os.path.join(app.config["UPLOAD_FOLDER"],
+                       f"reviews_{pid}_{stage}_{reviewer_id}.csv")
+    df.to_csv(out, index=False)
+    safe_name = reviewer.name.replace(" ", "_")
+    return send_file(out, as_attachment=True,
+                     download_name=f"{project.name}_{stage}_{safe_name}_decisions.csv")
+
+
+@app.route("/project/<int:pid>/export-reviews/combined")
+def export_reviews_combined(pid):
+    """Wide-format export with one column per reviewer + a consensus column."""
+    project   = Project.query.get_or_404(pid)
+    stage     = request.args.get("stage", "title")
+    reviewers = Reviewer.query.filter_by(project_id=pid).all()
+
+    # Collect all papers reviewed in this stage
+    reviewed_ids = (db.session.query(Review.paper_id)
+                    .join(Paper).filter(Paper.project_id == pid, Review.stage == stage)
+                    .distinct().all())
+    paper_ids = [r[0] for r in reviewed_ids]
+
+    rows = []
+    for paper in Paper.query.filter(Paper.id.in_(paper_ids)).all():
+        row = {
+            "Title":   paper.title   or "",
+            "DOI":     paper.doi     or "",
+            "Authors": paper.authors or "",
+            "Year":    paper.year    or "",
+        }
+        numeric_decisions = []
+        for rv in reviewers:
+            rev = Review.query.filter_by(paper_id=paper.id,
+                                         reviewer_id=rv.id, stage=stage).first()
+            val = DECISION_TO_NUM[rev.decision] if rev else ""
+            row[rv.name] = val
+            if rev:
+                numeric_decisions.append(DECISION_TO_NUM[rev.decision])
+
+        # Consensus: exclude only if unanimous; include if any included
+        if numeric_decisions:
+            if all(v == 0 for v in numeric_decisions):
+                consensus_num  = 0
+                consensus_text = "exclude"
+            elif any(v == 1 for v in numeric_decisions):
+                consensus_num  = 1
+                consensus_text = "include"
+            else:
+                consensus_num  = 0.5
+                consensus_text = "uncertain"
+        else:
+            consensus_num  = ""
+            consensus_text = ""
+
+        row["Consensus_Decision"] = consensus_text
+        row["Consensus_Numeric"]  = consensus_num
+        rows.append(row)
+
+    df  = pd.DataFrame(rows)
+    out = os.path.join(app.config["UPLOAD_FOLDER"],
+                       f"combined_{pid}_{stage}.csv")
+    df.to_csv(out, index=False)
+    return send_file(out, as_attachment=True,
+                     download_name=f"{project.name}_{stage}_combined_decisions.csv")
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────

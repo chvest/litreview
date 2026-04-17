@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Import Reviews — {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <nav aria-label="breadcrumb" class="mb-3">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+        <li class="breadcrumb-item active">Import Reviews</li>
+      </ol>
+    </nav>
+
+    <div class="card mb-3">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-file-earmark-check me-2 text-primary"></i>Import Existing Review Decisions</h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted">
+          Upload a <strong>CSV</strong> or <strong>Excel (.xlsx)</strong> file containing review decisions
+          that were recorded outside LitReview. You will map which column holds the paper title
+          (used to match against your existing papers) and which column holds the decision.
+        </p>
+
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Select file</label>
+            <input type="file" name="file" class="form-control" accept=".csv,.xlsx,.xls" required>
+            <div class="form-text">Supported: .csv, .xlsx, .xls — max 50 MB</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-arrow-right me-1"></i>Next: Map Columns
+            </button>
+            <a href="{{ url_for('project_dashboard', pid=project.id) }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body small">
+        <h6><i class="bi bi-info-circle me-2 text-info"></i>Expected decision values</h6>
+        <table class="table table-sm table-borderless mb-0">
+          <tbody>
+            <tr><td><code>0</code> or <code>0.0</code></td><td><span class="badge badge-exclude">Exclude</span></td></tr>
+            <tr><td><code>0.5</code></td>               <td><span class="badge badge-uncertain">Uncertain</span></td></tr>
+            <tr><td><code>1</code> or <code>1.0</code></td><td><span class="badge badge-include">Include</span></td></tr>
+          </tbody>
+        </table>
+        <p class="text-muted mb-0 mt-2">
+          Values between 0–0.25 map to <em>exclude</em>, 0.25–0.75 to <em>uncertain</em>,
+          and 0.75–1 to <em>include</em>. Rows with unrecognisable values are skipped and reported.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
