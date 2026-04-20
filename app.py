@@ -116,6 +116,11 @@ class PilotPaper(db.Model):
 STAGES = ["title", "abstract", "fulltext"]
 STAGE_LABELS = {"title": "Title Review", "abstract": "Abstract Review", "fulltext": "Full-Text Review"}
 
+# Make constants available in all templates
+@app.context_processor
+def inject_globals():
+    return dict(STAGE_LABELS=STAGE_LABELS, STAGES=STAGES)
+
 
 def get_active_pilot(project_id, stage):
     """Return the active PilotBatch for (project, stage), or None."""
@@ -695,6 +700,27 @@ def import_reviews_map(pid):
                            stages=STAGES, stage_labels=STAGE_LABELS)
 
 
+# ── Paper list ────────────────────────────────────────────────────────────────
+
+@app.route("/project/<int:pid>/papers")
+def paper_list(pid):
+    project = Project.query.get_or_404(pid)
+    papers  = Paper.query.filter_by(project_id=pid).order_by(Paper.id).all()
+    return render_template("papers.html", project=project, papers=papers,
+                           stages=STAGES, stage_labels=STAGE_LABELS)
+
+
+@app.route("/project/<int:pid>/papers/<int:paper_id>/delete", methods=["POST"])
+def delete_paper(pid, paper_id):
+    paper = Paper.query.get_or_404(paper_id)
+    if paper.project_id != pid:
+        return redirect(url_for("paper_list", pid=pid))
+    db.session.delete(paper)
+    db.session.commit()
+    flash("Paper deleted.", "success")
+    return redirect(url_for("paper_list", pid=pid))
+
+
 # ── Criteria ──────────────────────────────────────────────────────────────────
 
 @app.route("/project/<int:pid>/criteria", methods=["GET", "POST"])
@@ -818,7 +844,7 @@ def review_next(pid, stage):
     ensure_review_order(reviewer.id, pid, stage)
     paper = get_next_paper(reviewer.id, pid, stage)
     if paper is None:
-        return redirect(url_for("review_complete", pid=pid, stage=stage))
+        return redirect(url_for("review_start", pid=pid, stage=stage))
     return redirect(url_for("review_paper", pid=pid, stage=stage, paper_id=paper.id))
 
 
@@ -852,7 +878,11 @@ def review_paper(pid, stage, paper_id):
                                       stage=stage, decision=decision,
                                       notes=notes, exclusion_criteria=exc_criteria))
             db.session.commit()
-            return redirect(url_for("review_next", pid=pid, stage=stage))
+            next_p = get_next_paper(reviewer.id, pid, stage)
+            if next_p:
+                return redirect(url_for("review_paper", pid=pid, stage=stage, paper_id=next_p.id))
+            # All done — return to this paper; template shows the completion banner
+            return redirect(url_for("review_paper", pid=pid, stage=stage, paper_id=paper_id))
 
     inclusion_criteria = (Criterion.query.filter_by(project_id=pid, type="inclusion")
                           .order_by(Criterion.sort_order, Criterion.id).all())
@@ -873,6 +903,7 @@ def review_paper(pid, stage, paper_id):
     next_paper = get_next_paper_in_order(reviewer.id, stage, paper_id)
     next_paper_id = next_paper.id if next_paper else None
     active_pilot = get_active_pilot(pid, stage)
+    next_stage = STAGES[STAGES.index(stage) + 1] if stage != STAGES[-1] else None
 
     return render_template("review_paper.html", project=project, paper=paper,
                            reviewer=reviewer, stage=stage,
@@ -884,7 +915,8 @@ def review_paper(pid, stage, paper_id):
                            position=position,
                            prev_paper_id=prev_paper_id,
                            next_paper_id=next_paper_id,
-                           active_pilot=active_pilot)
+                           active_pilot=active_pilot,
+                           next_stage=next_stage)
 
 
 @app.route("/project/<int:pid>/review/<stage>/complete")

@@ -216,6 +216,27 @@
 
 </div>
 
+<!-- Completion banner (shown when all papers in this stage are reviewed) -->
+{% if stats.remaining == 0 %}
+<div class="alert alert-success d-flex align-items-center gap-3 flex-wrap mb-3">
+  <i class="bi bi-check-circle-fill fs-4 flex-shrink-0"></i>
+  <div class="me-auto">
+    <strong>All {{ stats.total }} papers reviewed</strong> for {{ stage_label }}.
+    You can still navigate the list to correct any decision.
+  </div>
+  {% if next_stage %}
+  <a href="{{ url_for('review_start', pid=project.id, stage=next_stage) }}"
+     class="btn btn-success btn-sm text-nowrap">
+    Continue to {{ STAGE_LABELS[next_stage] }} <i class="bi bi-arrow-right ms-1"></i>
+  </a>
+  {% endif %}
+  <a href="{{ url_for('review_start', pid=project.id, stage=stage) }}"
+     class="btn btn-outline-success btn-sm text-nowrap">
+    <i class="bi bi-list-ul me-1"></i>Paper list
+  </a>
+</div>
+{% endif %}
+
 <!-- Decision bar (sticky bottom) -->
 <div class="decision-bar">
   <div class="d-flex align-items-center gap-2 flex-wrap">
