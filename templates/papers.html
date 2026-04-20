@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Papers — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Papers</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center mb-3 gap-3 flex-wrap">
+  <h4 class="mb-0 me-auto">
+    Papers
+    <span class="badge bg-secondary fs-6 ms-2" id="count-badge">{{ papers|length }}</span>
+  </h4>
+
+  <!-- Search -->
+  <input type="search" id="paper-search" class="form-control" style="max-width:22rem"
+         placeholder="Search title, authors, DOI…" autocomplete="off">
+
+  <!-- Filter: no-DOI only -->
+  <div class="form-check form-switch mb-0">
+    <input class="form-check-input" type="checkbox" id="no-doi-filter">
+    <label class="form-check-label small text-muted" for="no-doi-filter">
+      <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>No DOI only
+    </label>
+  </div>
+</div>
+
+{% if papers %}
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:75vh; overflow-y:auto">
+      <table class="table table-hover table-sm align-middle mb-0" id="paper-table">
+        <thead class="table-light sticky-top">
+          <tr>
+            <th style="width:3rem" class="text-muted">#</th>
+            <th>Title</th>
+            <th style="width:18%">Authors</th>
+            <th style="width:4rem" class="text-center">Year</th>
+            <th style="width:18%">DOI</th>
+            <th style="width:8%">Source</th>
+            <th style="width:3rem"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for paper in papers %}
+          <tr class="paper-row" data-nodoi="{{ '1' if not paper.doi else '0' }}">
+            <td class="text-muted small">{{ loop.index }}</td>
+            <td>
+              {% if not paper.doi %}
+              <i class="bi bi-exclamation-triangle-fill text-warning me-1"
+                 title="No DOI — duplicate detection is less reliable" style="font-size:.8rem"></i>
+              {% endif %}
+              <span class="paper-title">{{ paper.title or '(no title)' }}</span>
+              {% if paper.abstract %}
+              <button type="button"
+                      class="btn btn-link btn-sm p-0 ms-2 text-muted abstract-toggle"
+                      style="font-size:.72rem; vertical-align:baseline"
+                      data-id="{{ paper.id }}">
+                abstract
+              </button>
+              <div class="abstract-preview text-muted small mt-1 d-none"
+                   id="abs-{{ paper.id }}"
+                   style="max-height:8rem; overflow-y:auto; font-size:.82rem; line-height:1.6">
+                {{ paper.abstract }}
+              </div>
+              {% endif %}
+            </td>
+            <td class="small text-muted paper-authors">
+              {{ paper.authors[:60] if paper.authors else '' }}
+              {% if paper.authors and paper.authors|length > 60 %}…{% endif %}
+            </td>
+            <td class="text-center small">{{ paper.year or '' }}</td>
+            <td class="small paper-doi">
+              {% if paper.doi %}
+              <a href="https://doi.org/{{ paper.doi }}" target="_blank"
+                 class="text-muted text-decoration-none text-break">{{ paper.doi }}</a>
+              {% else %}
+              <span class="text-warning">—</span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ paper.source or '' }}</td>
+            <td class="text-end">
+              <form method="post"
+                    action="{{ url_for('delete_paper', pid=project.id, paper_id=paper.id) }}"
+                    onsubmit="return confirm('Delete "{{ (paper.title or 'this paper')[:60] }}"? This also removes all reviews for it.')">
+                <button type="submit" class="btn btn-link btn-sm text-danger p-0"
+                        title="Delete paper">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="text-muted small mt-2" id="no-results" style="display:none">
+  No papers match your search.
+</div>
+
+{% else %}
+<div class="card">
+  <div class="card-body text-muted">
+    No papers imported yet.
+    <a href="{{ url_for('import_papers', pid=project.id) }}">Import papers</a> to get started.
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const searchInput  = document.getElementById('paper-search');
+const nodoiFilter  = document.getElementById('no-doi-filter');
+const countBadge   = document.getElementById('count-badge');
+const noResults    = document.getElementById('no-results');
+const rows         = document.querySelectorAll('.paper-row');
+
+function applyFilters() {
+  const q       = (searchInput.value || '').toLowerCase();
+  const nodoiOn = nodoiFilter.checked;
+  let visible   = 0;
+
+  rows.forEach(row => {
+    const title   = (row.querySelector('.paper-title')?.textContent  || '').toLowerCase();
+    const authors = (row.querySelector('.paper-authors')?.textContent || '').toLowerCase();
+    const doi     = (row.querySelector('.paper-doi')?.textContent     || '').toLowerCase();
+    const nodoi   = row.dataset.nodoi === '1';
+
+    const matchesSearch = !q || title.includes(q) || authors.includes(q) || doi.includes(q);
+    const matchesFilter = !nodoiOn || nodoi;
+
+    if (matchesSearch && matchesFilter) {
+      row.style.display = '';
+      visible++;
+    } else {
+      row.style.display = 'none';
+    }
+  });
+
+  countBadge.textContent = visible;
+  noResults.style.display = visible === 0 ? '' : 'none';
+}
+
+searchInput.addEventListener('input', applyFilters);
+nodoiFilter.addEventListener('change', applyFilters);
+
+// Abstract toggle
+document.querySelectorAll('.abstract-toggle').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const abs = document.getElementById('abs-' + btn.dataset.id);
+    const hidden = abs.classList.toggle('d-none');
+    btn.textContent = hidden ? 'abstract' : 'hide';
+  });
+});
+</script>
+{% endblock %}
