@@ -107,6 +107,10 @@
             <div class="d-flex justify-content-between align-items-start">
               <div class="me-2" style="min-width:0">
                 <span class="text-muted small me-2">#{{ pos }}</span>
+                {% if not paper.doi %}
+                <i class="bi bi-exclamation-triangle-fill text-warning me-1"
+                   title="No DOI" style="font-size:.75rem"></i>
+                {% endif %}
                 <span class="small fw-semibold">{{ paper.title or '(no title)' }}</span>
                 {% if paper.authors %}
                 <div class="text-muted" style="font-size:.78rem">{{ paper.authors[:80] }}{% if paper.authors|length > 80 %}…{% endif %}</div>

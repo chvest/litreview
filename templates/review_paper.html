@@ -32,6 +32,17 @@
     <i class="bi bi-list-ul me-1"></i>Paper List
   </a>
 
+  {% if next_paper_id %}
+  <a href="{{ url_for('review_paper', pid=project.id, stage=stage, paper_id=next_paper_id) }}"
+     class="btn btn-sm btn-outline-secondary" title="Next paper (→)" id="btn-nav-next">
+    <i class="bi bi-arrow-right"></i>
+  </a>
+  {% else %}
+  <button class="btn btn-sm btn-outline-secondary" disabled title="No next paper" id="btn-nav-next">
+    <i class="bi bi-arrow-right"></i>
+  </button>
+  {% endif %}
+
   <div class="flex-grow-1">
     <div class="d-flex justify-content-between small text-muted mb-1">
       <span>
@@ -67,6 +78,10 @@
           <span>
             <i class="bi bi-link-45deg me-1"></i>
             <a href="https://doi.org/{{ paper.doi }}" target="_blank" class="text-muted">{{ paper.doi }}</a>
+          </span>
+          {% else %}
+          <span class="text-warning" title="No DOI — duplicate detection is less reliable for this paper">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>No DOI
           </span>
           {% endif %}
           {% if paper.source %}<span><i class="bi bi-database me-1"></i>{{ paper.source }}</span>{% endif %}
@@ -313,19 +328,51 @@ function toggleHighlight() {
   if (legend) legend.style.removeProperty('display');
 }
 
+// ── Exclusion / inclusion mutual exclusivity ──────────────────────────────────
+(function () {
+  const excCheckboxes = document.querySelectorAll('input[name="exclusion_criteria"]');
+  const btnInclude    = document.getElementById('btn-include');
+
+  function syncMutex() {
+    if (!btnInclude) return;
+    const anyExc = [...excCheckboxes].some(cb => cb.checked);
+    btnInclude.disabled = anyExc;
+    btnInclude.title    = anyExc ? 'Uncheck all exclusion reasons to enable Include' : '';
+  }
+
+  excCheckboxes.forEach(cb => cb.addEventListener('change', syncMutex));
+
+  // When Include is clicked (if somehow re-enabled), clear any checked exclusion boxes
+  if (btnInclude) {
+    btnInclude.addEventListener('click', function () {
+      excCheckboxes.forEach(cb => { cb.checked = false; });
+    });
+  }
+
+  syncMutex(); // apply on page load (handles pre-filled state)
+})();
+
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener('keydown', function(e) {
   if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
   const map = { 'i': 'include', 'e': 'exclude', 'u': 'uncertain' };
   const decision = map[e.key.toLowerCase()];
   if (decision) {
-    document.getElementById('btn-' + decision).click();
+    const btn = document.getElementById('btn-' + decision);
+    if (btn && !btn.disabled) btn.click();
     return;
   }
   // Left arrow → previous paper
   if (e.key === 'ArrowLeft') {
     {% if prev_paper_id %}
     window.location = '{{ url_for("review_paper", pid=project.id, stage=stage, paper_id=prev_paper_id) }}';
+    {% endif %}
+    return;
+  }
+  // Right arrow → next paper in order
+  if (e.key === 'ArrowRight') {
+    {% if next_paper_id %}
+    window.location = '{{ url_for("review_paper", pid=project.id, stage=stage, paper_id=next_paper_id) }}';
     {% endif %}
   }
 });

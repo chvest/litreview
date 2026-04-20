@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Import Assignment — {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <nav aria-label="breadcrumb" class="mb-3">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+        <li class="breadcrumb-item active">Import Assignment</li>
+      </ol>
+    </nav>
+
+    <div class="card">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-person-check me-2 text-primary"></i>Import Assignment File</h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted">
+          Upload an assignment file you received from the lead reviewer.
+          The papers will be added to this project so you can screen them
+          and export your decisions when done.
+        </p>
+
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Assignment file</label>
+            <input type="file" name="file" class="form-control" accept=".csv,.xlsx,.xls" required>
+            <div class="form-text">Supported: .csv, .xlsx, .xls</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-upload me-1"></i>Import Papers
+            </button>
+            <a href="{{ url_for('project_dashboard', pid=project.id) }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-body small">
+        <h6><i class="bi bi-signpost-split me-2 text-info"></i>Workflow</h6>
+        <ol class="text-muted mb-3 ps-3">
+          <li class="mb-1">Import this assignment file — the papers are added to your project automatically.</li>
+          <li class="mb-1">Go to <strong>Review</strong> and screen the papers.</li>
+          <li class="mb-1">When done, export your decisions via <strong>Reviewers → Export</strong>.</li>
+          <li>Send the exported file back to the lead reviewer, who imports it via <strong>Import → Import Completed Assignment</strong>.</li>
+        </ol>
+        <div class="alert alert-secondary py-2 mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          Papers already in this project (matched by DOI or title) are skipped automatically.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

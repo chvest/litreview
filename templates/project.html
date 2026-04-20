@@ -12,14 +12,25 @@
       <i class="bi bi-upload me-1"></i>Import
     </button>
     <ul class="dropdown-menu">
+      <li><h6 class="dropdown-header">Papers</h6></li>
       <li>
         <a class="dropdown-item" href="{{ url_for('import_papers', pid=project.id) }}">
           <i class="bi bi-file-earmark-spreadsheet me-2"></i>Import Papers
+          <span class="text-muted small d-block" style="margin-top:-.15rem">PubMed, Scopus, Web of Science…</span>
         </a>
       </li>
       <li>
+        <a class="dropdown-item" href="{{ url_for('import_assignment_papers', pid=project.id) }}">
+          <i class="bi bi-person-check me-2"></i>Import Assignment
+          <span class="text-muted small d-block" style="margin-top:-.15rem">Received an assignment file from a lead reviewer</span>
+        </a>
+      </li>
+      <li><hr class="dropdown-divider"></li>
+      <li><h6 class="dropdown-header">Decisions</h6></li>
+      <li>
         <a class="dropdown-item" href="{{ url_for('import_reviews_upload', pid=project.id) }}">
-          <i class="bi bi-file-earmark-check me-2"></i>Import Reviews
+          <i class="bi bi-file-earmark-check me-2"></i>Import Completed Assignment
+          <span class="text-muted small d-block" style="margin-top:-.15rem">Decisions returned by a reviewer (0 / 0.5 / 1)</span>
         </a>
       </li>
     </ul>
@@ -143,10 +154,13 @@
   <div class="col-md-4">
     <div class="card h-100">
       <div class="card-body">
-        <h6 class="card-title"><i class="bi bi-cone-striped text-warning me-2"></i>Pilot Review</h6>
-        <p class="small text-muted">Calibrate reviewers on a shared sample before full screening begins.</p>
-        <a href="{{ url_for('pilot_overview', pid=project.id) }}" class="btn btn-sm btn-outline-warning">
-          Pilot Setup
+        <h6 class="card-title"><i class="bi bi-calendar-check text-primary me-2"></i>Planning</h6>
+        <p class="small text-muted">Calibrate reviewers with a pilot batch, or generate assignment files for reviewers to screen offline.</p>
+        <a href="{{ url_for('pilot_overview', pid=project.id) }}" class="btn btn-sm btn-outline-warning me-1">
+          Pilot
+        </a>
+        <a href="{{ url_for('generate_assignment', pid=project.id) }}" class="btn btn-sm btn-outline-primary">
+          Assign
         </a>
       </div>
     </div>

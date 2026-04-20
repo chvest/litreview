@@ -45,11 +45,19 @@
             <li><a class="dropdown-item" href="{{ url_for('review_start', pid=project.id, stage='fulltext') }}">Full-Text Review</a></li>
           </ul>
         </li>
-        <li class="nav-item">
-          <a class="nav-link{% if request.endpoint == 'pilot_overview' %} active{% endif %}"
-             href="{{ url_for('pilot_overview', pid=project.id) }}">
-            <i class="bi bi-cone-striped me-1"></i>Pilot
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle{% if request.endpoint in ('pilot_overview', 'generate_assignment') %} active{% endif %}"
+             href="#" role="button" data-bs-toggle="dropdown">
+            <i class="bi bi-calendar-check me-1"></i>Plan
           </a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="{{ url_for('pilot_overview', pid=project.id) }}">
+              <i class="bi bi-cone-striped me-2"></i>Pilot Review
+            </a></li>
+            <li><a class="dropdown-item" href="{{ url_for('generate_assignment', pid=project.id) }}">
+              <i class="bi bi-person-check me-2"></i>Generate Assignment
+            </a></li>
+          </ul>
         </li>
         <li class="nav-item">
           <a class="nav-link{% if request.endpoint == 'manage_criteria' %} active{% endif %}"

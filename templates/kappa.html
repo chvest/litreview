@@ -54,7 +54,7 @@
 
     <div class="card mt-3">
       <div class="card-body small">
-        <h6>Kappa interpretation</h6>
+        <h6>Score interpretation</h6>
         <table class="table table-sm table-borderless mb-0">
           <tbody>
             <tr><td>&lt; 0</td><td class="text-danger">Poor</td></tr>
@@ -66,8 +66,8 @@
           </tbody>
         </table>
         <p class="text-muted mb-0 mt-2">
-          Based on Landis &amp; Koch (1977). A kappa ≥ 0.6 is generally considered acceptable
-          for systematic reviews (Kitchenham et al.).
+          Based on Landis &amp; Koch (1977). AC1 ≥ 0.6 is generally considered
+          acceptable for systematic reviews.
         </p>
       </div>
     </div>
@@ -78,20 +78,84 @@
 
     {% if kappa_result %}
     <div class="card mb-4">
-      <div class="card-body text-center py-4">
-        <div class="text-muted mb-1">Cohen's κ — {{ stage_labels[stage] }}</div>
-        <div class="display-3 fw-bold
-          {% if kappa_result.value >= 0.8 %}text-success
-          {% elif kappa_result.value >= 0.6 %}text-primary
-          {% elif kappa_result.value >= 0.4 %}text-warning
-          {% else %}text-danger{% endif %}">
-          {{ kappa_result.value }}
+      <div class="card-body py-4">
+
+        <!-- Three metrics in a row -->
+        <div class="row text-center g-0">
+          <!-- Simple agreement -->
+          <div class="col-4 border-end">
+            <div class="text-muted small mb-1">Simple agreement</div>
+            <div class="display-5 fw-bold
+              {% if kappa_result.simple_agreement >= 80 %}text-success
+              {% elif kappa_result.simple_agreement >= 60 %}text-primary
+              {% elif kappa_result.simple_agreement >= 40 %}text-warning
+              {% else %}text-danger{% endif %}">
+              {{ kappa_result.simple_agreement }}%
+            </div>
+            <div class="text-muted small mt-1">
+              {{ kappa_result.n_agreed }} / {{ kappa_result.n_papers }} papers
+            </div>
+          </div>
+
+          <!-- Gwet's AC1 — primary -->
+          <div class="col-4 border-end">
+            <div class="text-muted small mb-1">
+              Gwet's AC1
+              <i class="bi bi-patch-check-fill text-primary ms-1"
+                 title="Recommended for systematic reviews — robust to high exclusion rates"></i>
+            </div>
+            <div class="display-5 fw-bold
+              {% if kappa_result.ac1 >= 0.8 %}text-success
+              {% elif kappa_result.ac1 >= 0.6 %}text-primary
+              {% elif kappa_result.ac1 >= 0.4 %}text-warning
+              {% else %}text-danger{% endif %}">
+              {{ kappa_result.ac1 }}
+            </div>
+            <div class="small mt-1">{{ kappa_result.ac1_interpretation }}</div>
+          </div>
+
+          <!-- Cohen's κ — secondary -->
+          <div class="col-4">
+            <div class="text-muted small mb-1">
+              Cohen's κ
+              {% if kappa_result.degenerate %}
+              <i class="bi bi-exclamation-triangle-fill text-warning ms-1"
+                 title="Unreliable — see note below"></i>
+              {% endif %}
+            </div>
+            <div class="display-5 fw-bold
+              {% if kappa_result.degenerate %}text-secondary
+              {% elif kappa_result.kappa >= 0.8 %}text-success
+              {% elif kappa_result.kappa >= 0.6 %}text-primary
+              {% elif kappa_result.kappa >= 0.4 %}text-warning
+              {% else %}text-danger{% endif %}">
+              {{ kappa_result.kappa }}
+            </div>
+            <div class="small mt-1 text-muted">
+              {% if kappa_result.degenerate %}unreliable{% else %}{{ kappa_result.kappa_interpretation }}{% endif %}
+            </div>
+          </div>
         </div>
-        <div class="fs-5 mt-1">{{ kappa_result.interpretation }}</div>
-        <div class="text-muted small mt-2">
-          Based on {{ kappa_result.n_papers }} papers reviewed by both
+
+        <div class="text-muted small text-center mt-3">
+          {{ stage_labels[stage] }} &mdash; {{ kappa_result.n_papers }} papers reviewed by both
           <strong>{{ r1.name }}</strong> and <strong>{{ r2.name }}</strong>
         </div>
+
+        <!-- Prevalence warning (shown whenever κ is misleadingly low) -->
+        {% if kappa_result.degenerate or (kappa_result.ac1 - kappa_result.kappa) > 0.2 %}
+        <div class="alert alert-info py-2 small mt-3 mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          <strong>Why does Cohen's κ look low?</strong>
+          In literature reviews, most papers are excluded, which creates a highly
+          skewed label distribution. Cohen's κ corrects for chance agreement using
+          each reviewer's individual marginal rates — when both reviewers exclude
+          ~90 % of papers, the formula treats most of their agreement as
+          <em>expected by chance</em>, driving κ down even when actual agreement is
+          high. <strong>Gwet's AC1</strong> corrects for this by using averaged
+          marginals and is the recommended metric for systematic reviews.
+        </div>
+        {% endif %}
       </div>
     </div>
 

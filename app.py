@@ -1,5 +1,7 @@
+import io
 import os
 import random
+import zipfile
 from collections import defaultdict
 from datetime import datetime
 
@@ -191,15 +193,28 @@ def get_prev_paper(reviewer_id, stage, current_paper_id):
     return prev.paper if prev else None
 
 
+def get_next_paper_in_order(reviewer_id, stage, current_paper_id):
+    """Return the paper immediately after current_paper_id in the reviewer's order, or None."""
+    current = ReviewOrder.query.filter_by(
+        reviewer_id=reviewer_id, paper_id=current_paper_id, stage=stage
+    ).first()
+    if not current:
+        return None
+    nxt = ReviewOrder.query.filter_by(
+        reviewer_id=reviewer_id, stage=stage, position=current.position + 1
+    ).first()
+    return nxt.paper if nxt else None
+
+
 def stage_stats(reviewer_id, stage):
     total = ReviewOrder.query.filter_by(reviewer_id=reviewer_id, stage=stage).count()
     done = Review.query.filter_by(reviewer_id=reviewer_id, stage=stage).count()
     return {"total": total, "done": done, "remaining": total - done}
 
 
-def interpret_kappa(k):
+def interpret_agreement(k):
     if k < 0:
-        return "Poor (less than chance agreement)"
+        return "Poor"
     if k < 0.20:
         return "Slight"
     if k < 0.40:
@@ -209,6 +224,31 @@ def interpret_kappa(k):
     if k < 0.80:
         return "Substantial"
     return "Almost Perfect"
+
+
+def gwets_ac1(y1, y2, n_categories=3):
+    """Gwet's AC1 inter-rater agreement coefficient.
+
+    More robust than Cohen's κ when label distributions are highly skewed
+    (the 'prevalence problem') — common in systematic reviews where most
+    papers are excluded.  Uses average marginal probabilities rather than
+    products, so high exclusion rates don't artificially inflate expected
+    chance agreement.
+    """
+    n = len(y1)
+    if n == 0:
+        return 0.0
+    K = n_categories
+    p_o = sum(1 for a, b in zip(y1, y2) if a == b) / n
+    # Average marginal probability for each category k
+    p_e = 0.0
+    for k in range(K):
+        pi_k = (y1.count(k) + y2.count(k)) / (2 * n)
+        p_e += pi_k * (1 - pi_k)
+    p_e /= (K - 1)
+    if p_e >= 1.0:
+        return 1.0
+    return (p_o - p_e) / (1 - p_e)
 
 
 def normalize_title(t):
@@ -345,26 +385,33 @@ def import_columns(pid):
             flash(f"Error reading file: {e}", "danger")
             return redirect(url_for("import_papers", pid=pid))
 
-        imported = skipped = 0
-        for _, row in df.iterrows():
-            def col(key):
-                c = mapping.get(key)
-                if not c:
-                    return ""
-                val = row.get(c)
-                return "" if pd.isna(val) else str(val).strip()
+        def col(key):
+            c = mapping.get(key)
+            if not c:
+                return ""
+            val = row.get(c) if hasattr(row, 'get') else ""
+            if pd.isna(val):
+                return ""
+            s = str(val).strip()
+            return "" if s.lower() == "nan" else s
 
+        # Build normalised lookup sets for fast duplicate detection
+        existing_dois   = {normalize_doi(p.doi)    for p in Paper.query.filter_by(project_id=pid).all() if p.doi}
+        existing_titles = {normalize_title(p.title) for p in Paper.query.filter_by(project_id=pid).all() if p.title}
+
+        imported = skipped = no_doi = 0
+        for _, row in df.iterrows():
             title = col("title")
             doi   = col("doi")
             if not title and not doi:
                 skipped += 1
                 continue
 
-            # Duplicate check
-            if doi and Paper.query.filter_by(project_id=pid, doi=doi).first():
-                skipped += 1
-                continue
-            if title and Paper.query.filter_by(project_id=pid, title=title).first():
+            ndoi   = normalize_doi(doi)     if doi   else ""
+            ntitle = normalize_title(title) if title else ""
+
+            # Duplicate check (normalised)
+            if (ndoi and ndoi in existing_dois) or (ntitle and ntitle in existing_titles):
                 skipped += 1
                 continue
 
@@ -376,20 +423,125 @@ def import_columns(pid):
                 except ValueError:
                     pass
 
-            db.session.add(Paper(project_id=pid, title=title,
-                                 authors=col("authors"), abstract=col("abstract"),
-                                 year=year, doi=doi, source=col("source")))
+            db.session.add(Paper(project_id=pid, title=title or None,
+                                 authors=col("authors") or None,
+                                 abstract=col("abstract") or None,
+                                 year=year,
+                                 doi=doi or None,
+                                 source=col("source") or None))
+            if ndoi:
+                existing_dois.add(ndoi)
+            if ntitle:
+                existing_titles.add(ntitle)
+            if not doi:
+                no_doi += 1
             imported += 1
 
         db.session.commit()
         for key in ("import_file", "import_columns", "import_preview"):
             session.pop(key, None)
 
-        flash(f"Imported {imported} papers. Skipped {skipped} (duplicates or empty).", "success")
+        msg = f"Imported {imported} paper(s). Skipped {skipped} (duplicates or empty rows)."
+        if no_doi:
+            msg += f" {no_doi} paper(s) have no DOI — they are included but flagged."
+        flash(msg, "success")
         return redirect(url_for("project_dashboard", pid=pid))
 
     return render_template("column_map.html", project=project,
                            columns=columns, preview=preview)
+
+
+# ── Import assignment (papers from a LitReview assignment file) ───────────────
+
+@app.route("/project/<int:pid>/import-assignment", methods=["GET", "POST"])
+def import_assignment_papers(pid):
+    """Import papers from a LitReview-generated assignment CSV/Excel.
+
+    The assignment format has known column names (Title, Authors, Abstract,
+    Year, DOI, Decision, Notes), so no column-mapping step is needed.
+    Duplicate papers are skipped by DOI or normalised title.
+    """
+    project = Project.query.get_or_404(pid)
+
+    if request.method == "POST":
+        f = request.files.get("file")
+        if not f or f.filename == "":
+            flash("No file selected.", "danger")
+            return redirect(request.url)
+
+        filename = secure_filename(f.filename)
+        filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        f.save(filepath)
+
+        try:
+            df = (pd.read_csv(filepath, encoding="utf-8-sig")
+                  if filename.lower().endswith(".csv")
+                  else pd.read_excel(filepath))
+        except Exception as e:
+            flash(f"Error reading file: {e}", "danger")
+            return redirect(request.url)
+
+        # Case-insensitive column lookup
+        col = {c.strip().lower(): c for c in df.columns}
+
+        def get(row, name, default=""):
+            key = col.get(name.lower())
+            if key is None:
+                return default
+            v = row[key]
+            return "" if (v != v or v is None) else str(v).strip()  # handles NaN
+
+        if "title" not in col and "doi" not in col:
+            flash("File must have at least a Title or DOI column. "
+                  "Is this a LitReview assignment file?", "danger")
+            return redirect(request.url)
+
+        # Build duplicate-check sets from existing papers
+        existing_dois   = {normalize_doi(p.doi)   for p in Paper.query.filter_by(project_id=pid).all() if p.doi}
+        existing_titles = {normalize_title(p.title) for p in Paper.query.filter_by(project_id=pid).all() if p.title}
+
+        imported = skipped = 0
+        for _, row in df.iterrows():
+            title    = get(row, "title")
+            doi      = get(row, "doi")
+            authors  = get(row, "authors")
+            abstract = get(row, "abstract")
+            year_raw = get(row, "year")
+
+            ndoi   = normalize_doi(doi)     if doi   else ""
+            ntitle = normalize_title(title) if title else ""
+
+            if (ndoi and ndoi in existing_dois) or (ntitle and ntitle in existing_titles):
+                skipped += 1
+                continue
+
+            try:
+                year = int(float(year_raw)) if year_raw else None
+            except (ValueError, TypeError):
+                year = None
+
+            db.session.add(Paper(
+                project_id=pid,
+                title    = title    or None,
+                authors  = authors  or None,
+                abstract = abstract or None,
+                year     = year,
+                doi      = doi      or None,
+            ))
+            if ndoi:
+                existing_dois.add(ndoi)
+            if ntitle:
+                existing_titles.add(ntitle)
+            imported += 1
+
+        db.session.commit()
+        msg = f"Imported {imported} paper(s)."
+        if skipped:
+            msg += f" Skipped {skipped} duplicate(s)."
+        flash(msg, "success")
+        return redirect(url_for("project_dashboard", pid=pid))
+
+    return render_template("import_assignment.html", project=project)
 
 
 # ── Import reviews ────────────────────────────────────────────────────────────
@@ -718,6 +870,8 @@ def review_paper(pid, stage, paper_id):
 
     prev_paper = get_prev_paper(reviewer.id, stage, paper_id)
     prev_paper_id = prev_paper.id if prev_paper else None
+    next_paper = get_next_paper_in_order(reviewer.id, stage, paper_id)
+    next_paper_id = next_paper.id if next_paper else None
     active_pilot = get_active_pilot(pid, stage)
 
     return render_template("review_paper.html", project=project, paper=paper,
@@ -729,6 +883,7 @@ def review_paper(pid, stage, paper_id):
                            selected_exc=selected_exc,
                            position=position,
                            prev_paper_id=prev_paper_id,
+                           next_paper_id=next_paper_id,
                            active_pilot=active_pilot)
 
 
@@ -983,12 +1138,21 @@ def kappa_analysis(pid):
             label_map = {"include": 2, "uncertain": 1, "exclude": 0}
             y1 = [label_map[r1_map[p]] for p in common]
             y2 = [label_map[r2_map[p]] for p in common]
+            agreed = sum(1 for p in common if r1_map[p] == r2_map[p])
+            simple_pct = round(100 * agreed / len(common), 1)
+            degenerate = len(set(y1)) == 1 or len(set(y2)) == 1
             try:
-                k = cohen_kappa_score(y1, y2)
+                k    = cohen_kappa_score(y1, y2, labels=[0, 1, 2])
+                ac1  = gwets_ac1(y1, y2, n_categories=3)
                 kappa_result = {
-                    "value": round(k, 4),
-                    "n_papers": len(common),
-                    "interpretation": interpret_kappa(k),
+                    "kappa":              round(k,   4),
+                    "ac1":                round(ac1, 4),
+                    "n_papers":           len(common),
+                    "n_agreed":           agreed,
+                    "simple_agreement":   simple_pct,
+                    "kappa_interpretation": interpret_agreement(k),
+                    "ac1_interpretation":   interpret_agreement(ac1),
+                    "degenerate":         degenerate,
                 }
                 decisions = ["include", "uncertain", "exclude"]
                 matrix = [[0] * 3 for _ in range(3)]
@@ -1153,6 +1317,89 @@ def export_reviews_combined(pid):
     df.to_csv(out, index=False)
     return send_file(out, as_attachment=True,
                      download_name=f"{project.name}_{stage}_combined_decisions.csv")
+
+
+# ── Generate assignment export ────────────────────────────────────────────────
+
+@app.route("/project/<int:pid>/assign", methods=["GET", "POST"])
+def generate_assignment(pid):
+    """Export a blank assignment CSV (or ZIP) for reviewers to fill in offline."""
+    project = Project.query.get_or_404(pid)
+    reviewers = Reviewer.query.filter_by(project_id=pid).all()
+
+    if request.method == "POST":
+        stage              = request.form.get("stage", "title")
+        reviewer_ids       = request.form.getlist("reviewer_ids", type=int)
+        paper_filter       = request.form.get("paper_filter", "all")   # "all" | "unreviewed"
+        reviewers_per_paper = request.form.get("reviewers_per_paper", type=int) or 1
+
+        if not reviewer_ids:
+            flash("Select at least one reviewer.", "danger")
+            return redirect(request.url)
+
+        n = len(reviewer_ids)
+        reviewers_per_paper = max(1, min(reviewers_per_paper, n))
+
+        eligible = get_eligible_papers(pid, stage)
+
+        if paper_filter == "unreviewed":
+            reviewed_ids = set()
+            for rid in reviewer_ids:
+                reviewed_ids |= {r.paper_id for r in
+                                 Review.query.filter_by(reviewer_id=rid, stage=stage).all()}
+            eligible = [p for p in eligible if p.id not in reviewed_ids]
+
+        if not eligible:
+            flash("No papers to assign for the selected options.", "warning")
+            return redirect(request.url)
+
+        def make_df(papers):
+            return pd.DataFrame([{
+                "Title":    p.title    or "",
+                "Authors":  p.authors  or "",
+                "Abstract": p.abstract or "",
+                "Year":     p.year     or "",
+                "DOI":      p.doi      or "",
+                "Decision": "",
+                "Notes":    "",
+            } for p in papers])
+
+        project_safe = project.name.replace(" ", "_")
+
+        # ── Single reviewer → one CSV ──────────────────────────────────────────
+        if n == 1:
+            rv      = Reviewer.query.get(reviewer_ids[0])
+            rv_safe = rv.name.replace(" ", "_")
+            df      = make_df(eligible)
+            out     = os.path.join(app.config["UPLOAD_FOLDER"],
+                                   f"assign_{pid}_{stage}_{rv_safe}.csv")
+            df.to_csv(out, index=False)
+            return send_file(out, as_attachment=True,
+                             download_name=f"{project_safe}_{stage}_{rv_safe}_assignment.csv")
+
+        # ── Multiple reviewers → ZIP, one CSV per reviewer ────────────────────
+        # Round-robin overlap: paper i is assigned to reviewers at positions
+        # [(i + j) % n for j in range(reviewers_per_paper)]
+        per_reviewer = {rid: [] for rid in reviewer_ids}
+        for i, paper in enumerate(eligible):
+            for j in range(reviewers_per_paper):
+                per_reviewer[reviewer_ids[(i + j) % n]].append(paper)
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for rid in reviewer_ids:
+                rv      = Reviewer.query.get(rid)
+                rv_safe = rv.name.replace(" ", "_")
+                csv_str = make_df(per_reviewer[rid]).to_csv(index=False)
+                zf.writestr(f"{project_safe}_{stage}_{rv_safe}_assignment.csv",
+                            csv_str.encode("utf-8"))
+        buf.seek(0)
+        return send_file(buf, as_attachment=True,
+                         mimetype="application/zip",
+                         download_name=f"{project_safe}_{stage}_assignments.zip")
+
+    return render_template("assign.html", project=project, reviewers=reviewers,
+                           stages=STAGES, stage_labels=STAGE_LABELS)
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
