@@ -74,6 +74,81 @@
     </div>
   </div>
 
+  <!-- Source breakdown -->
+  {% if source_stats %}
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-database me-2 text-primary"></i>Papers by Source / Database</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Source</th>
+              <th class="text-center">Imported</th>
+              {% if stages_done %}<th class="text-center">Included</th><th class="text-center">Rate</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for src, d in source_stats %}
+            <tr>
+              <td>{{ src }}</td>
+              <td class="text-center">{{ d.total }}</td>
+              {% if stages_done %}
+              <td class="text-center">{{ d.included }}</td>
+              <td class="text-center text-muted small">
+                {{ ((d.included / d.total * 100) | int) if d.total else 0 }}%
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Uncertain papers needing a decision -->
+  {% set total_uncertain = uncertain_papers.values() | map('length') | sum %}
+  {% if total_uncertain > 0 %}
+  <div class="col-lg-6">
+    <div class="card border-warning">
+      <div class="card-header bg-white">
+        <h6 class="mb-0">
+          <i class="bi bi-question-circle me-2 text-warning"></i>Uncertain Papers Needing a Decision
+          <span class="badge bg-warning text-dark ms-2">{{ total_uncertain }}</span>
+        </h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Stage</th><th class="text-center">Papers</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for s in STAGES %}
+            {% set ups = uncertain_papers[s] %}
+            {% if ups %}
+            <tr>
+              <td>{{ STAGE_LABELS[s] }}</td>
+              <td class="text-center">{{ ups | length }}</td>
+              <td>
+                <a href="{{ url_for('decisions_overview', pid=project.id, stage=s) }}"
+                   class="btn btn-xs btn-outline-warning btn-sm py-0 px-2" style="font-size:.75rem">
+                  Review →
+                </a>
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Exclusion reasons -->
   {% if exclusion_counts %}
   <div class="col-lg-6">
@@ -88,12 +163,61 @@
   </div>
   {% endif %}
 
+  <!-- Reviewer decision breakdown -->
+  {% if reviewer_decisions %}
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-people me-2 text-primary"></i>Decision Rate per Reviewer</h6>
+      </div>
+      <div class="card-body">
+        {% for row in reviewer_decisions %}
+        <div class="mb-4">
+          <div class="fw-semibold small mb-2">{{ row.name }}</div>
+          {% for s in STAGES %}
+          {% set sd = row.stages[s] %}
+          {% if sd %}
+          <div class="mb-2">
+            <div class="d-flex justify-content-between small text-muted mb-1">
+              <span>{{ STAGE_LABELS[s] }}</span>
+              <span>{{ sd.total }} reviews</span>
+            </div>
+            <div class="progress" style="height:16px; border-radius:4px">
+              <div class="progress-bar bg-success" style="width:{{ sd.include_pct }}%"
+                   title="Include: {{ sd.include }} ({{ sd.include_pct }}%)">
+                {% if sd.include_pct > 8 %}{{ sd.include_pct }}%{% endif %}
+              </div>
+              <div class="progress-bar bg-warning" style="width:{{ sd.uncertain_pct }}%"
+                   title="Uncertain: {{ sd.uncertain }} ({{ sd.uncertain_pct }}%)">
+                {% if sd.uncertain_pct > 8 %}{{ sd.uncertain_pct }}%{% endif %}
+              </div>
+              <div class="progress-bar bg-danger" style="width:{{ sd.exclude_pct }}%"
+                   title="Exclude: {{ sd.exclude }} ({{ sd.exclude_pct }}%)">
+                {% if sd.exclude_pct > 8 %}{{ sd.exclude_pct }}%{% endif %}
+              </div>
+            </div>
+            <div class="d-flex gap-3 mt-1" style="font-size:.72rem; color:#6c757d">
+              <span><span class="badge badge-include me-1" style="font-size:.65rem">✓</span>{{ sd.include }} incl.</span>
+              <span><span class="badge badge-uncertain me-1" style="font-size:.65rem">?</span>{{ sd.uncertain }} unc.</span>
+              <span><span class="badge badge-exclude me-1" style="font-size:.65rem">✕</span>{{ sd.exclude }} excl.</span>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% if not loop.last %}<hr class="my-2">{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Per-reviewer counts -->
   {% if reviewer_stats %}
   <div class="col-lg-6">
     <div class="card">
       <div class="card-header bg-white">
-        <h6 class="mb-0"><i class="bi bi-people me-2 text-primary"></i>Reviews per Reviewer</h6>
+        <h6 class="mb-0"><i class="bi bi-table me-2 text-primary"></i>Reviews per Reviewer</h6>
       </div>
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
@@ -120,6 +244,27 @@
     </div>
   </div>
   {% endif %}
+
+  <!-- PRISMA flow diagram -->
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header bg-white d-flex align-items-center gap-3 flex-wrap">
+        <h6 class="mb-0"><i class="bi bi-diagram-3 me-2 text-primary"></i>PRISMA Flow Diagram</h6>
+        <div class="ms-auto d-flex align-items-center gap-3 flex-wrap">
+          <div class="btn-group btn-group-sm" role="group" id="lang-toggle">
+            <button type="button" class="btn btn-primary active" data-lang="en">English</button>
+            <button type="button" class="btn btn-outline-secondary" data-lang="sv">Svenska</button>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" onclick="downloadPrisma()">
+            <i class="bi bi-download me-1"></i>Download SVG
+          </button>
+        </div>
+      </div>
+      <div class="card-body d-flex justify-content-center" style="overflow-x:auto">
+        <div id="prisma-container" style="min-width:700px; max-width:900px; width:100%"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- Export -->
   <div class="col-12">
@@ -154,8 +299,8 @@ new Chart(document.getElementById('yearChart'), {
     datasets: [{
       label: 'Papers',
       data: {{ year_counts | tojson }},
-      backgroundColor: 'rgba(13,110,253,0.7)',
-      borderColor: 'rgba(13,110,253,1)',
+      backgroundColor: 'rgba(61,122,191,0.7)',
+      borderColor: 'rgba(61,122,191,1)',
       borderWidth: 1,
       borderRadius: 4,
     }]
@@ -163,9 +308,7 @@ new Chart(document.getElementById('yearChart'), {
   options: {
     responsive: true,
     plugins: { legend: { display: false } },
-    scales: {
-      y: { beginAtZero: true, ticks: { stepSize: 1 } }
-    }
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
   }
 });
 {% endif %}
@@ -195,5 +338,245 @@ new Chart(document.getElementById('exclusionChart'), {
   }
 });
 {% endif %}
+
+// ── PRISMA diagram ─────────────────────────────────────────────────────────────
+
+const PRISMA_DATA = {{ prisma | tojson }};
+
+const PRISMA_LABELS = {
+  en: {
+    identification: "Identification",
+    screening:      "Screening",
+    inclusion:      "Inclusion",
+    via_databases:  "Identification via databases",
+    records_identified: "Publications identified",
+    duplicates_removed: "Duplicates removed",
+    titles_screened: "Titles screened",
+    titles_excluded: "Titles excluded",
+    abstracts_screened: "Abstracts screened",
+    abstracts_excluded: "Abstracts excluded",
+    fulltext_assessed: "Full-text publications reviewed",
+    fulltext_excluded: "Full-text publications excluded",
+    studies_included: "Publications included",
+    n: "n",
+  },
+  sv: {
+    identification: "Identifiering",
+    screening:      "Granskning",
+    inclusion:      "Inkludering",
+    via_databases:  "Identifiering via databaser",
+    records_identified: "Identifierade publikationer",
+    duplicates_removed: "Borttagna dubbletter",
+    titles_screened: "Titlar granskade",
+    titles_excluded: "Titlar exkluderade",
+    abstracts_screened: "Abstrakt granskade",
+    abstracts_excluded: "Abstrakt exkluderade",
+    fulltext_assessed: "Fulltexter granskade",
+    fulltext_excluded: "Fulltext exkluderade",
+    studies_included: "Inkluderade publikationer",
+    n: "n",
+  }
+};
+
+let currentLang = 'en';
+
+function buildPrisma(lang) {
+  const L = PRISMA_LABELS[lang];
+  const d = PRISMA_DATA;
+  const ts = d.stages['title']   || {};
+  const as = d.stages['abstract']|| {};
+  const fs = d.stages['fulltext']|| {};
+
+  // Use eligible counts for screened boxes
+  const titlesScreened   = ts.eligible || 0;
+  const titlesExcluded   = ts.excluded  || 0;
+  const abstractScreened = as.eligible  || 0;
+  const abstractExcluded = as.excluded  || 0;
+  const fulltextAssessed = fs.eligible  || 0;
+  const fulltextExcluded = fs.excluded  || 0;
+  const finalIncluded    = d.final_included || 0;
+  const imported         = d.imported || 0;
+  const dupes            = d.duplicates_removed || 0;
+
+  // Source lines
+  const sourceLines = (d.sources || [])
+    .map(([src, n]) => `${src} (${L.n}=${n})`)
+    .join('\n') || `(${L.n}=${imported})`;
+
+  // SVG layout constants
+  const W = 860, H = 620;
+  const bw = 200, bh = 52;   // main box
+  const sw = 180, sh = 44;   // side (excluded) box
+  const lx = 60;             // left section label x
+  const col1 = 200;          // left column center x
+  const col2 = col1 + bw/2 + 60 + sw/2; // excluded box center
+  const sectionW = col1 + bw/2 + 10;
+
+  // Row y centers
+  const y0 = 90;   // identification
+  const y1 = 220;  // title screening
+  const y2 = 340;  // abstract screening
+  const y3 = 460;  // fulltext
+  const y4 = 570;  // included
+
+  // Section label regions
+  const sections = [
+    { label: L.identification, y1: 50,  y2: 175, color: '#f3e8ff' },
+    { label: L.screening,      y1: 175, y2: 410, color: '#fef9e7' },
+    { label: L.inclusion,      y1: 410, y2: H-10,color: '#e9f7ef' },
+  ];
+
+  function box(cx, cy, w, h, text, fill='#fff', stroke='#adb5bd', textColor='#212529') {
+    const lines = text.split('\n');
+    const lineH = 15;
+    const totalH = lines.length * lineH;
+    const startY = cy - totalH / 2 + lineH * 0.8;
+    const textEls = lines.map((l, i) =>
+      `<tspan x="${cx}" dy="${i === 0 ? 0 : lineH}">${escSvg(l)}</tspan>`
+    ).join('');
+    return `
+      <rect x="${cx - w/2}" y="${cy - h/2}" width="${w}" height="${h}"
+            rx="6" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
+      <text x="${cx}" y="${startY}" text-anchor="middle" font-size="11.5"
+            fill="${textColor}" font-family="sans-serif">${textEls}</text>`;
+  }
+
+  function arrow(x1, y1, x2, y2) {
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
+              stroke="#6c757d" stroke-width="1.5" marker-end="url(#arrowhead)"/>`;
+  }
+
+  function sideArrow(fromX, fromY, toX, toY) {
+    const mx = (fromX + toX) / 2;
+    return `<polyline points="${fromX},${fromY} ${mx},${fromY} ${mx},${toY} ${toX},${toY}"
+              fill="none" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arrowhead)"/>`;
+  }
+
+  function escSvg(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Section backgrounds + rotated labels
+  let sectionSvg = sections.map(s => {
+    const mid = (s.y1 + s.y2) / 2;
+    return `
+      <rect x="${lx}" y="${s.y1}" width="34" height="${s.y2 - s.y1}"
+            rx="5" fill="${s.color}" stroke="#ced4da" stroke-width="1"/>
+      <text x="${lx + 17}" y="${mid}" text-anchor="middle" dominant-baseline="middle"
+            font-size="11" font-weight="600" fill="#495057" font-family="sans-serif"
+            transform="rotate(-90 ${lx+17} ${mid})">${escSvg(s.label)}</text>`;
+  }).join('');
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"
+    viewBox="0 0 ${W} ${H}" id="prisma-svg" style="font-family:sans-serif">
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#6c757d"/>
+    </marker>
+  </defs>
+
+  <!-- Section labels -->
+  ${sectionSvg}
+
+  <!-- Header -->
+  <text x="${W/2}" y="22" text-anchor="middle" font-size="15" font-weight="700"
+        fill="#212529" font-family="sans-serif">PRISMA Flow Diagram</text>
+  <text x="${col1 + bw/2 - 30}" y="42" text-anchor="middle" font-size="11"
+        fill="#6c757d" font-family="sans-serif">${escSvg(L.via_databases)}</text>
+
+  <!-- Identification row: sources box -->
+  ${box(col1, y0, bw, bh,
+    `${L.records_identified}:\n${sourceLines}`,
+    '#fff', '#adb5bd')}
+
+  <!-- Duplicates removed -->
+  ${box(col2, y0, sw, sh,
+    `${L.duplicates_removed}\n(${L.n}=${dupes})`,
+    '#fff8f8', '#f5a0a8')}
+  ${sideArrow(col1 + bw/2, y0, col2 - sw/2, y0)}
+
+  <!-- Arrow down to titles screened -->
+  ${arrow(col1, y0 + bh/2, col1, y1 - bh/2)}
+
+  <!-- Titles screened -->
+  ${box(col1, y1, bw, bh,
+    `${L.titles_screened}\n(${L.n}=${titlesScreened})`,
+    '#fff', '#adb5bd')}
+
+  <!-- Titles excluded -->
+  ${box(col2, y1, sw, sh,
+    `${L.titles_excluded}\n(${L.n}=${titlesExcluded})`,
+    '#fff8f8', '#f5a0a8')}
+  ${sideArrow(col1 + bw/2, y1, col2 - sw/2, y1)}
+
+  <!-- Arrow down to abstracts -->
+  ${arrow(col1, y1 + bh/2, col1, y2 - bh/2)}
+
+  <!-- Abstracts screened -->
+  ${box(col1, y2, bw, bh,
+    `${L.abstracts_screened}\n(${L.n}=${abstractScreened})`,
+    '#fff', '#adb5bd')}
+
+  <!-- Abstracts excluded -->
+  ${box(col2, y2, sw, sh,
+    `${L.abstracts_excluded}\n(${L.n}=${abstractExcluded})`,
+    '#fff8f8', '#f5a0a8')}
+  ${sideArrow(col1 + bw/2, y2, col2 - sw/2, y2)}
+
+  <!-- Arrow down to fulltext -->
+  ${arrow(col1, y2 + bh/2, col1, y3 - bh/2)}
+
+  <!-- Full-text assessed -->
+  ${box(col1, y3, bw, bh,
+    `${L.fulltext_assessed}\n(${L.n}=${fulltextAssessed})`,
+    '#fff', '#adb5bd')}
+
+  <!-- Full-text excluded -->
+  ${box(col2, y3, sw, sh,
+    `${L.fulltext_excluded}\n(${L.n}=${fulltextExcluded})`,
+    '#fff8f8', '#f5a0a8')}
+  ${sideArrow(col1 + bw/2, y3, col2 - sw/2, y3)}
+
+  <!-- Arrow down to included -->
+  ${arrow(col1, y3 + bh/2, col1, y4 - bh/2)}
+
+  <!-- Studies included -->
+  ${box(col1, y4, bw, bh,
+    `${L.studies_included}\n(${L.n}=${finalIncluded})`,
+    '#d4edda', '#198754', '#155724')}
+
+</svg>`;
+
+  return svg;
+}
+
+function renderPrisma() {
+  document.getElementById('prisma-container').innerHTML = buildPrisma(currentLang);
+}
+
+function downloadPrisma() {
+  const svg = document.getElementById('prisma-svg');
+  if (!svg) return;
+  const blob = new Blob([svg.outerHTML], {type: 'image/svg+xml'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'prisma_flow.svg';
+  a.click();
+}
+
+// Language toggle
+document.querySelectorAll('#lang-toggle [data-lang]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentLang = btn.dataset.lang;
+    document.querySelectorAll('#lang-toggle [data-lang]').forEach(b => {
+      b.className = b.dataset.lang === currentLang
+        ? 'btn btn-primary active'
+        : 'btn btn-outline-secondary';
+    });
+    renderPrisma();
+  });
+});
+
+renderPrisma();
 </script>
 {% endblock %}

@@ -1185,13 +1185,101 @@ def statistics(pid):
             row[s] = Review.query.filter_by(reviewer_id=r.id, stage=s).join(Paper).filter(Paper.project_id == pid).count()
         reviewer_stats.append(row)
 
+    # --- Reviewer decision breakdown (include/uncertain/exclude %) per stage ---
+    reviewer_decisions = []
+    for r in reviewers:
+        row = {"name": r.name, "stages": {}}
+        for s in STAGES:
+            revs = (Review.query.filter_by(reviewer_id=r.id, stage=s)
+                    .join(Paper).filter(Paper.project_id == pid).all())
+            total_s = len(revs)
+            if total_s:
+                inc = sum(1 for x in revs if x.decision == "include")
+                unc = sum(1 for x in revs if x.decision == "uncertain")
+                exc = sum(1 for x in revs if x.decision == "exclude")
+                row["stages"][s] = {
+                    "total": total_s,
+                    "include": inc, "include_pct": round(inc / total_s * 100),
+                    "uncertain": unc, "uncertain_pct": round(unc / total_s * 100),
+                    "exclude": exc, "exclude_pct": round(exc / total_s * 100),
+                }
+            else:
+                row["stages"][s] = None
+        reviewer_decisions.append(row)
+
+    # --- Source / database breakdown ---
+    source_counts = defaultdict(lambda: {"total": 0, "included": 0})
+    last_stage = stages_done[-1] if stages_done else None
+    for paper in Paper.query.filter_by(project_id=pid).all():
+        src = (paper.source or "Unknown").strip() or "Unknown"
+        source_counts[src]["total"] += 1
+        if last_stage:
+            revs = Review.query.filter_by(paper_id=paper.id, stage=last_stage).all()
+            if revs and any(r.decision != "exclude" for r in revs):
+                source_counts[src]["included"] += 1
+    source_stats = sorted(source_counts.items(), key=lambda x: -x[1]["total"])
+
+    # --- Uncertain papers still needing a decision ---
+    uncertain_papers = {}
+    for s in STAGES:
+        ups = []
+        for paper in get_eligible_papers(pid, s, ignore_pilot=True):
+            revs = Review.query.filter_by(paper_id=paper.id, stage=s).all()
+            if revs and any(r.decision == "uncertain" for r in revs):
+                # Check if there's already a group override
+                gd = GroupDecision.query.filter_by(paper_id=paper.id, stage=s).first()
+                if not gd or gd.decision == "uncertain":
+                    ups.append(paper)
+        uncertain_papers[s] = ups
+
+    # --- PRISMA numbers ---
+    # Per-stage: imported → title eligible → title included → abstract eligible → …
+    prisma = {
+        "imported": total,
+        "duplicates_removed": 0,   # not tracked yet
+        "stages": {}
+    }
+    for i, s in enumerate(STAGES):
+        eligible_papers = get_eligible_papers(pid, s, ignore_pilot=True)
+        n_eligible = len(eligible_papers)
+        n_included = 0
+        n_excluded = 0
+        n_uncertain = 0
+        for p in eligible_papers:
+            revs = Review.query.filter_by(paper_id=p.id, stage=s).all()
+            gd = GroupDecision.query.filter_by(paper_id=p.id, stage=s).first()
+            effective = gd.decision if gd else (
+                compute_consensus([r.decision for r in revs]) if revs else None
+            )
+            if effective == "include":
+                n_included += 1
+            elif effective == "exclude":
+                n_excluded += 1
+            elif effective == "uncertain":
+                n_uncertain += 1
+        prisma["stages"][s] = {
+            "label": STAGE_LABELS[s],
+            "eligible": n_eligible,
+            "included": n_included,
+            "excluded": n_excluded,
+            "uncertain": n_uncertain,
+        }
+    prisma["final_included"] = final_included
+
+    # Source breakdown for PRISMA identification boxes
+    prisma["sources"] = [(src, d["total"]) for src, d in source_stats]
+
     return render_template("statistics.html", project=project,
                            funnel=funnel, years=years, year_counts=year_counts,
                            exclusion_counts=exclusion_counts,
                            criteria_labels=criteria_labels,
                            stages_done=stages_done,
                            final_included=final_included,
-                           reviewer_stats=reviewer_stats)
+                           reviewer_stats=reviewer_stats,
+                           reviewer_decisions=reviewer_decisions,
+                           source_stats=source_stats,
+                           uncertain_papers=uncertain_papers,
+                           prisma=prisma)
 
 
 # ── Cohen's Kappa ─────────────────────────────────────────────────────────────
