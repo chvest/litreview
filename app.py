@@ -282,8 +282,21 @@ def normalize_doi(d):
     return s
 
 
+def read_upload_file(filepath):
+    """Read a CSV or Excel upload into a DataFrame.
+
+    For CSV files uses sep=None / Python engine so that both comma- and
+    semicolon-delimited files (common in European Excel exports) are handled
+    automatically.
+    """
+    if filepath.lower().endswith((".xlsx", ".xls")):
+        return pd.read_excel(filepath)
+    return pd.read_csv(filepath, encoding="utf-8-sig", sep=None, engine="python")
+
+
 def parse_decision_value(val):
-    """Map 0 / 0.5 / 1 (and string variants) to include / uncertain / exclude."""
+    """Map 0 / 0.5 / 1 (and string variants, including comma decimal) to
+    include / uncertain / exclude."""
     try:
         v = float(str(val).replace(",", ".").strip())
     except (ValueError, TypeError):
@@ -333,6 +346,7 @@ def project_dashboard(pid):
     total = Paper.query.filter_by(project_id=pid).count()
 
     stages_info = {}
+    all_reviewers = Reviewer.query.filter_by(project_id=pid).all()
     for stage in STAGES:
         eligible = len(get_eligible_papers(pid, stage, ignore_pilot=True))
         reviewed_papers = (db.session.query(Review.paper_id)
@@ -341,8 +355,24 @@ def project_dashboard(pid):
                            .distinct().count())
         active_pilot = get_active_pilot(pid, stage)
         pilot_size = len(active_pilot.papers) if active_pilot else 0
+
+        # Per-reviewer pilot completion
+        pilot_reviewer_progress = []
+        if active_pilot and all_reviewers:
+            pilot_paper_ids = [pp.paper_id for pp in active_pilot.papers]
+            for r in all_reviewers:
+                done = (Review.query
+                        .filter_by(reviewer_id=r.id, stage=stage)
+                        .filter(Review.paper_id.in_(pilot_paper_ids))
+                        .count())
+                pilot_reviewer_progress.append({
+                    "name": r.name, "done": done, "total": pilot_size,
+                    "complete": done >= pilot_size
+                })
+
         stages_info[stage] = {"eligible": eligible, "reviewed": reviewed_papers,
-                               "label": STAGE_LABELS[stage], "pilot_size": pilot_size}
+                               "label": STAGE_LABELS[stage], "pilot_size": pilot_size,
+                               "pilot_reviewer_progress": pilot_reviewer_progress}
 
     reviewers = Reviewer.query.filter_by(project_id=pid).all()
     criteria_count = Criterion.query.filter_by(project_id=pid).count()
@@ -365,7 +395,7 @@ def import_papers(pid):
         filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
         f.save(filepath)
         try:
-            df = pd.read_csv(filepath, encoding="utf-8-sig") if filename.lower().endswith(".csv") else pd.read_excel(filepath)
+            df = read_upload_file(filepath)
         except Exception as e:
             flash(f"Error reading file: {e}", "danger")
             return redirect(request.url)
@@ -399,7 +429,7 @@ def import_columns(pid):
 
         filepath = session["import_file"]
         try:
-            df = pd.read_csv(filepath, encoding="utf-8-sig") if filepath.lower().endswith(".csv") else pd.read_excel(filepath)
+            df = read_upload_file(filepath)
         except Exception as e:
             flash(f"Error reading file: {e}", "danger")
             return redirect(url_for("import_papers", pid=pid))
@@ -493,9 +523,7 @@ def import_assignment_papers(pid):
         f.save(filepath)
 
         try:
-            df = (pd.read_csv(filepath, encoding="utf-8-sig")
-                  if filename.lower().endswith(".csv")
-                  else pd.read_excel(filepath))
+            df = read_upload_file(filepath)
         except Exception as e:
             flash(f"Error reading file: {e}", "danger")
             return redirect(request.url)
@@ -577,21 +605,14 @@ def import_reviews_upload(pid):
         filepath = os.path.join(app.config["UPLOAD_FOLDER"], "rev_" + filename)
         f.save(filepath)
         try:
-            df = pd.read_csv(filepath, encoding="utf-8-sig") if filename.lower().endswith(".csv") else pd.read_excel(filepath)
+            df = read_upload_file(filepath)
         except Exception as e:
             flash(f"Error reading file: {e}", "danger")
             return redirect(request.url)
 
+        # Only keep the filepath in the session — columns/preview/samples are
+        # derived from the file itself and can exceed the 4 KB cookie limit.
         session["rev_import_file"] = filepath
-        session["rev_import_columns"] = list(df.columns)
-        session["rev_import_preview"] = df.head(3).fillna("").astype(str).to_dict("records")
-
-        # Show unique decision values to help the user identify the right column
-        value_samples = {}
-        for col in df.columns:
-            unique = df[col].dropna().unique()[:6]
-            value_samples[col] = [str(v) for v in unique]
-        session["rev_import_value_samples"] = value_samples
 
         return redirect(url_for("import_reviews_map", pid=pid))
     return render_template("import_reviews.html", project=project)
@@ -603,10 +624,23 @@ def import_reviews_map(pid):
     if "rev_import_file" not in session:
         return redirect(url_for("import_reviews_upload", pid=pid))
 
-    columns       = session.get("rev_import_columns", [])
-    preview       = session.get("rev_import_preview", [])
-    value_samples = session.get("rev_import_value_samples", {})
-    reviewers     = Reviewer.query.filter_by(project_id=pid).all()
+    # Re-derive display data from the saved file (avoids 4 KB cookie-session limit)
+    filepath = session["rev_import_file"]
+    try:
+        _df = read_upload_file(filepath)
+    except Exception as e:
+        flash(f"Could not re-read upload file: {e}", "danger")
+        session.pop("rev_import_file", None)
+        return redirect(url_for("import_reviews_upload", pid=pid))
+
+    columns = list(_df.columns)
+    preview = _df.head(3).fillna("").astype(str).to_dict("records")
+    value_samples = {}
+    for col in _df.columns:
+        unique = _df[col].dropna().unique()[:6]
+        value_samples[col] = [str(v) for v in unique]
+
+    reviewers = Reviewer.query.filter_by(project_id=pid).all()
 
     if request.method == "POST":
         col_title    = request.form.get("col_title")
@@ -640,7 +674,7 @@ def import_reviews_map(pid):
 
         filepath = session["rev_import_file"]
         try:
-            df = pd.read_csv(filepath, encoding="utf-8-sig") if filepath.lower().endswith(".csv") else pd.read_excel(filepath)
+            df = read_upload_file(filepath)
         except Exception as e:
             flash(f"Error reading file: {e}", "danger")
             return redirect(url_for("import_reviews_upload", pid=pid))
@@ -696,15 +730,35 @@ def import_reviews_map(pid):
         # review start page (ensure_review_order skips if order already exists)
         ensure_review_order(reviewer.id, pid, stage)
 
-        for key in ("rev_import_file", "rev_import_columns",
-                    "rev_import_preview", "rev_import_value_samples"):
-            session.pop(key, None)
+        session.pop("rev_import_file", None)
 
         parts = [f"Imported {imported} review decision(s)"]
         if skipped:    parts.append(f"{skipped} skipped (already reviewed)")
         if unmatched:  parts.append(f"{unmatched} rows had no matching paper")
         if bad_value:  parts.append(f"{bad_value} rows had an unrecognised decision value")
         flash(". ".join(parts) + ".", "success" if imported else "warning")
+
+        # Warn if the reviewer is missing decisions for any expected papers.
+        # When a pilot is active, the expected set is just the pilot batch;
+        # otherwise it's all eligible papers for the stage.
+        active_pilot = get_active_pilot(pid, stage)
+        if active_pilot:
+            expected_ids = {pp.paper_id for pp in active_pilot.papers}
+            context = "pilot"
+        else:
+            expected_ids = {p.id for p in get_eligible_papers(pid, stage, ignore_pilot=True)}
+            context = stage
+        reviewed_ids = {r.paper_id for r in
+                        Review.query.filter_by(reviewer_id=reviewer.id, stage=stage)
+                        .join(Paper).filter(Paper.project_id == pid).all()}
+        missing = len(expected_ids - reviewed_ids)
+        if missing:
+            flash(
+                f"⚠ {reviewer.name} is still missing decisions for {missing} "
+                f"{context} paper(s). You can import again or review them manually.",
+                "warning"
+            )
+
         return redirect(url_for("project_dashboard", pid=pid))
 
     active_pilots = {s: get_active_pilot(pid, s) for s in STAGES}

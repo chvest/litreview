@@ -224,7 +224,7 @@
             <tr>
               <td>
                 <a href="{{ url_for('review_paper', pid=project.id, stage=stage, paper_id=c.paper.id) }}"
-                   class="text-decoration-none text-dark">
+                   class="text-decoration-none text-body">
                   {{ c.paper.title[:80] if c.paper.title else '(no title)' }}
                   {% if c.paper.title and c.paper.title|length > 80 %}…{% endif %}
                 </a>

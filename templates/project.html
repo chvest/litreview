@@ -135,12 +135,25 @@
         </div>
         <div class="progress-label">{{ info.reviewed }} / {{ info.eligible }} papers reviewed ({{ pct }}%)</div>
         {% if info.pilot_size %}
-        <div class="progress mt-2 mb-1" style="height:5px">
-          {% set ppct = ((info.reviewed / info.pilot_size * 100) | int) if info.pilot_size > 0 else 0 %}
-          <div class="progress-bar bg-warning" style="width:{{ [ppct, 100] | min }}%"></div>
-        </div>
-        <div class="progress-label text-warning-emphasis">
-          <i class="bi bi-cone-striped me-1"></i>{{ [info.reviewed, info.pilot_size] | min }} / {{ info.pilot_size }} pilot papers reviewed
+        <div class="mt-2 mb-1">
+          <div class="d-flex align-items-center gap-1 mb-1">
+            <i class="bi bi-cone-striped text-warning" style="font-size:.8rem"></i>
+            <span class="progress-label text-warning-emphasis fw-semibold">Pilot — {{ info.pilot_size }} papers</span>
+          </div>
+          {% for rp in info.pilot_reviewer_progress %}
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="progress-label text-muted" style="min-width:6rem; font-size:.72rem">{{ rp.name }}</span>
+            <div class="progress flex-grow-1" style="height:5px">
+              {% set ppct = ((rp.done / rp.total * 100) | int) if rp.total > 0 else 0 %}
+              <div class="progress-bar bg-warning" style="width:{{ ppct }}%"></div>
+            </div>
+            <span class="progress-label" style="min-width:3.5rem; text-align:right; font-size:.72rem">
+              {% if rp.complete %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}{{ rp.done }}/{{ rp.total }}{% endif %}
+            </span>
+          </div>
+          {% else %}
+          <div class="progress-label text-muted">No reviewers added yet.</div>
+          {% endfor %}
         </div>
         {% endif %}
         <div class="d-flex gap-2 mt-3">
