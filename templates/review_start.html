@@ -79,6 +79,26 @@
         <div class="mb-1">
           <strong>Eligible papers:</strong> {{ eligible_count }}
         </div>
+        {% if pilot_size %}
+        <div class="mt-2 mb-1">
+          <span class="badge bg-warning text-dark">
+            <i class="bi bi-cone-striped me-1"></i>Pilot active — {{ pilot_size }} papers
+          </span>
+        </div>
+        {% if stats %}
+        {% set ppct = ((stats.done / pilot_size * 100) | int) if pilot_size > 0 else 0 %}
+        <div class="mt-2">
+          <div class="d-flex justify-content-between mb-1">
+            <span>Pilot progress</span>
+            <span>{{ stats.done }} / {{ pilot_size }}</span>
+          </div>
+          <div class="progress" style="height:6px">
+            <div class="progress-bar bg-warning" style="width:{{ [ppct, 100] | min }}%"></div>
+          </div>
+        </div>
+        {% endif %}
+        <hr class="my-2">
+        {% endif %}
         {% if stage == 'title' %}
         <div>Reviewing titles (and authors/year). Decide if each paper is potentially relevant.</div>
         {% elif stage == 'abstract' %}

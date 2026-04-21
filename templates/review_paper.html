@@ -46,8 +46,13 @@
   <div class="flex-grow-1">
     <div class="d-flex justify-content-between small text-muted mb-1">
       <span>
-        <strong>{{ stage_label }}</strong> &mdash;
-        <span class="text-primary">{{ reviewer.name }}</span>
+        <strong>{{ stage_label }}</strong>
+        {% if active_pilot %}
+        <span class="badge bg-warning text-dark ms-1" style="font-size:.7rem">
+          <i class="bi bi-cone-striped me-1"></i>Pilot
+        </span>
+        {% endif %}
+        &mdash; <span class="text-primary">{{ reviewer.name }}</span>
         &mdash; Paper {{ position }} of {{ stats.total }}
       </span>
       <span>{{ stats.done }} done, {{ stats.remaining }} remaining</span>

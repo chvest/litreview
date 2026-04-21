@@ -145,6 +145,45 @@ kbd {
 
 /* ── Dark mode overrides ─────────────────────────────────────────────────── */
 
+/* Soften the primary blue — Bootstrap's #0d6efd is very vivid on dark surfaces */
+[data-bs-theme="dark"] {
+  --bs-primary:     #3d7abf;
+  --bs-primary-rgb: 61, 122, 191;
+  --bs-link-color:  #6ea8fe;
+  --bs-link-color-rgb: 110, 168, 254;
+}
+
+/* Navbar stays readable but less glaring */
+[data-bs-theme="dark"] .navbar.bg-primary {
+  background-color: #1c3f6e !important;
+}
+
+/* btn-primary hardcodes its own CSS vars, so --bs-primary alone doesn't reach it */
+[data-bs-theme="dark"] .btn-primary {
+  --bs-btn-bg:                 #2d6db5;
+  --bs-btn-border-color:       #2d6db5;
+  --bs-btn-hover-bg:           #3a7dca;
+  --bs-btn-hover-border-color: #3a7dca;
+  --bs-btn-active-bg:          #265e9e;
+  --bs-btn-active-border-color:#265e9e;
+}
+
+/* bg-primary badges / spans */
+[data-bs-theme="dark"] .bg-primary:not(.navbar):not(.btn) {
+  background-color: #2d6db5 !important;
+}
+
+/* outline-primary buttons */
+[data-bs-theme="dark"] .btn-outline-primary {
+  --bs-btn-color:              #6ea8fe;
+  --bs-btn-border-color:       #4a80c4;
+  --bs-btn-hover-bg:           #2d6db5;
+  --bs-btn-hover-border-color: #2d6db5;
+  --bs-btn-hover-color:        #fff;
+  --bs-btn-active-bg:          #2d6db5;
+  --bs-btn-active-border-color:#2d6db5;
+}
+
 /* Body background is slightly deeper than Bootstrap's default #212529 */
 [data-bs-theme="dark"] body {
   background: #181a1b;
@@ -154,6 +193,27 @@ kbd {
 [data-bs-theme="dark"] .card {
   background-color: #212529;
   box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+
+/* bg-white is not theme-aware — remap it to Bootstrap's tertiary surface */
+[data-bs-theme="dark"] .bg-white {
+  background-color: #2b3035 !important;
+  color: var(--bs-body-color) !important;
+}
+
+/* bg-light badges (e.g. year badge: bg-light text-dark) */
+[data-bs-theme="dark"] .badge.bg-light {
+  background-color: #3b4148 !important;
+  color: #d1d5da !important;
+}
+
+/* table-light thead rows */
+[data-bs-theme="dark"] .table-light,
+[data-bs-theme="dark"] thead.table-light > tr > th {
+  --bs-table-bg: #2b3035;
+  background-color: #2b3035 !important;
+  color: var(--bs-body-color) !important;
+  border-color: var(--bs-border-color) !important;
 }
 
 /* Sticky decision bar */

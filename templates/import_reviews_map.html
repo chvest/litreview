@@ -115,12 +115,24 @@
             <div class="mb-4">
               <label class="form-label fw-semibold">Review stage</label>
               {% for s in stages %}
-              <div class="form-check">
+              {% set pilot = active_pilots[s] %}
+              <div class="form-check mb-1">
                 <input class="form-check-input" type="radio" name="stage" value="{{ s }}"
                        id="stage_{{ s }}" {% if loop.first %}checked{% endif %}>
-                <label class="form-check-label" for="stage_{{ s }}">{{ stage_labels[s] }}</label>
+                <label class="form-check-label" for="stage_{{ s }}">
+                  {{ stage_labels[s] }}
+                  {% if pilot %}
+                  <span class="badge bg-warning text-dark ms-1" style="font-size:.7rem">
+                    <i class="bi bi-cone-striped me-1"></i>Pilot active — {{ pilot.papers|length }} papers
+                  </span>
+                  {% endif %}
+                </label>
               </div>
               {% endfor %}
+              <div class="form-text mt-1">
+                Pilot and full review decisions are stored under the same stage —
+                select whichever stage the reviewer screened.
+              </div>
             </div>
 
             <!-- Reviewer -->
@@ -159,16 +171,24 @@
 
             <!-- Duplicate handling -->
             <div class="mb-3">
-              <label class="form-label fw-semibold">If a decision already exists for a paper</label>
-              <div class="form-check">
+              <label class="form-label fw-semibold">Existing decisions</label>
+              <div class="form-check mb-1">
                 <input class="form-check-input" type="radio" name="overwrite"
                        value="no" id="ow_no" checked>
-                <label class="form-check-label" for="ow_no">Skip (keep existing)</label>
+                <label class="form-check-label" for="ow_no">
+                  Skip — keep existing decisions
+                </label>
               </div>
               <div class="form-check">
                 <input class="form-check-input" type="radio" name="overwrite"
                        value="yes" id="ow_yes">
-                <label class="form-check-label" for="ow_yes">Overwrite</label>
+                <label class="form-check-label" for="ow_yes">
+                  Overwrite — replace with imported decisions
+                </label>
+              </div>
+              <div class="form-text mt-1">
+                Use <em>Overwrite</em> when a reviewer has revised their decisions
+                after discussion and you want to update the records.
               </div>
             </div>
 

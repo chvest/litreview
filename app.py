@@ -111,6 +111,18 @@ class PilotPaper(db.Model):
     __table_args__ = (db.UniqueConstraint("batch_id", "paper_id"),)
 
 
+class GroupDecision(db.Model):
+    """Manually set consensus override for a paper+stage, independent of reviewer records."""
+    __tablename__ = "group_decisions"
+    id         = db.Column(db.Integer, primary_key=True)
+    paper_id   = db.Column(db.Integer, db.ForeignKey("papers.id"), nullable=False)
+    stage      = db.Column(db.String(20), nullable=False)
+    decision   = db.Column(db.String(20), nullable=False)   # include | uncertain | exclude
+    notes      = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("paper_id", "stage"),)
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 STAGES = ["title", "abstract", "fulltext"]
@@ -322,13 +334,15 @@ def project_dashboard(pid):
 
     stages_info = {}
     for stage in STAGES:
-        eligible = len(get_eligible_papers(pid, stage))
+        eligible = len(get_eligible_papers(pid, stage, ignore_pilot=True))
         reviewed_papers = (db.session.query(Review.paper_id)
                            .join(Paper)
                            .filter(Paper.project_id == pid, Review.stage == stage)
                            .distinct().count())
+        active_pilot = get_active_pilot(pid, stage)
+        pilot_size = len(active_pilot.papers) if active_pilot else 0
         stages_info[stage] = {"eligible": eligible, "reviewed": reviewed_papers,
-                               "label": STAGE_LABELS[stage]}
+                               "label": STAGE_LABELS[stage], "pilot_size": pilot_size}
 
     reviewers = Reviewer.query.filter_by(project_id=pid).all()
     criteria_count = Criterion.query.filter_by(project_id=pid).count()
@@ -693,11 +707,14 @@ def import_reviews_map(pid):
         flash(". ".join(parts) + ".", "success" if imported else "warning")
         return redirect(url_for("project_dashboard", pid=pid))
 
+    active_pilots = {s: get_active_pilot(pid, s) for s in STAGES}
+
     return render_template("import_reviews_map.html", project=project,
                            columns=columns, preview=preview,
                            value_samples=value_samples,
                            reviewers=reviewers,
-                           stages=STAGES, stage_labels=STAGE_LABELS)
+                           stages=STAGES, stage_labels=STAGE_LABELS,
+                           active_pilots=active_pilots)
 
 
 # ── Paper list ────────────────────────────────────────────────────────────────
@@ -816,12 +833,14 @@ def review_start(pid, stage):
                     Review.query.filter_by(reviewer_id=reviewer.id, stage=stage).all()}
         paper_list = [(o.position + 1, o.paper, done_map.get(o.paper_id)) for o in orders]
 
-    eligible_count = len(get_eligible_papers(pid, stage))
-    active_pilot = get_active_pilot(pid, stage)
+    active_pilot    = get_active_pilot(pid, stage)
+    eligible_count  = len(get_eligible_papers(pid, stage, ignore_pilot=True))
+    pilot_size      = len(active_pilot.papers) if active_pilot else 0
     return render_template("review_start.html", project=project,
                            reviewers=reviewers, reviewer=reviewer,
                            stage=stage, stage_label=STAGE_LABELS[stage],
                            stats=stats, eligible_count=eligible_count,
+                           pilot_size=pilot_size,
                            paper_list=paper_list, active_pilot=active_pilot)
 
 
@@ -1038,6 +1057,38 @@ def pilot_reset(pid):
     return redirect(url_for("pilot_overview", pid=pid))
 
 
+@app.route("/project/<int:pid>/pilot/export-assignment")
+def pilot_export_assignment(pid):
+    """Export the active pilot batch as a blank assignment CSV for other reviewers."""
+    project = Project.query.get_or_404(pid)
+    stage   = request.args.get("stage", "title")
+
+    active = get_active_pilot(pid, stage)
+    if not active:
+        flash("No active pilot batch for this stage.", "warning")
+        return redirect(url_for("pilot_overview", pid=pid))
+
+    paper_ids = [pp.paper_id for pp in active.papers]
+    papers = Paper.query.filter(Paper.id.in_(paper_ids)).all()
+    rows = [{
+        "Title":    p.title    or "",
+        "Authors":  p.authors  or "",
+        "Abstract": p.abstract or "",
+        "Year":     p.year     or "",
+        "DOI":      p.doi      or "",
+        "Decision": "",
+        "Notes":    "",
+    } for p in papers]
+
+    df  = pd.DataFrame(rows)
+    out = os.path.join(app.config["UPLOAD_FOLDER"],
+                       f"pilot_assignment_{pid}_{stage}.csv")
+    df.to_csv(out, index=False)
+    project_safe = project.name.replace(" ", "_")
+    return send_file(out, as_attachment=True,
+                     download_name=f"{project_safe}_{stage}_pilot_assignment.csv")
+
+
 @app.route("/project/<int:pid>/pilot/advance", methods=["POST"])
 def pilot_advance(pid):
     """Mark the pilot complete and open the stage for full review."""
@@ -1218,6 +1269,73 @@ def kappa_analysis(pid):
                            stages=STAGES, stage_labels=STAGE_LABELS)
 
 
+# ── Decisions overview (group override) ──────────────────────────────────────
+
+def compute_consensus(decisions):
+    """Same logic as the combined export: exclude only if unanimous, include if any included."""
+    if not decisions:
+        return None
+    if all(d == "exclude" for d in decisions):
+        return "exclude"
+    if any(d == "include" for d in decisions):
+        return "include"
+    return "uncertain"
+
+
+@app.route("/project/<int:pid>/decisions/<stage>", methods=["GET", "POST"])
+def decisions_overview(pid, stage):
+    if stage not in STAGES:
+        return redirect(url_for("project_dashboard", pid=pid))
+    project   = Project.query.get_or_404(pid)
+    reviewers = Reviewer.query.filter_by(project_id=pid).all()
+    papers    = get_eligible_papers(pid, stage, ignore_pilot=True)
+
+    if request.method == "POST":
+        for paper in papers:
+            val   = request.form.get(f"override_{paper.id}", "")
+            notes = request.form.get(f"notes_{paper.id}", "").strip()
+            existing = GroupDecision.query.filter_by(
+                paper_id=paper.id, stage=stage).first()
+            if val in ("include", "uncertain", "exclude"):
+                if existing:
+                    existing.decision   = val
+                    existing.notes      = notes
+                    existing.updated_at = datetime.utcnow()
+                else:
+                    db.session.add(GroupDecision(
+                        paper_id=paper.id, stage=stage,
+                        decision=val, notes=notes))
+            elif val == "" and existing:
+                db.session.delete(existing)
+        db.session.commit()
+        flash("Group decisions saved.", "success")
+        return redirect(request.url)
+
+    # Build per-paper display data
+    paper_data = []
+    for paper in papers:
+        rev_map = {r.reviewer_id: r.decision for r in
+                   Review.query.filter_by(paper_id=paper.id, stage=stage).all()}
+        group      = GroupDecision.query.filter_by(
+            paper_id=paper.id, stage=stage).first()
+        decisions  = list(rev_map.values())
+        consensus  = compute_consensus(decisions)
+        has_conflict = len(set(decisions)) > 1 if len(decisions) > 1 else False
+        paper_data.append({
+            "paper":        paper,
+            "rev_map":      rev_map,
+            "group":        group,
+            "consensus":    consensus,
+            "has_conflict": has_conflict,
+        })
+
+    return render_template("decisions.html",
+                           project=project, stage=stage,
+                           stage_label=STAGE_LABELS[stage],
+                           reviewers=reviewers,
+                           paper_data=paper_data)
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 
 @app.route("/project/<int:pid>/export")
@@ -1341,6 +1459,11 @@ def export_reviews_combined(pid):
 
         row["Consensus_Decision"] = consensus_text
         row["Consensus_Numeric"]  = consensus_num
+
+        group = GroupDecision.query.filter_by(paper_id=paper.id, stage=stage).first()
+        row["Group_Override"] = group.decision if group else ""
+        row["Group_Notes"]    = group.notes    if group else ""
+
         rows.append(row)
 
     df  = pd.DataFrame(rows)

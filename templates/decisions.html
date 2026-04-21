@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Decisions — {{ stage_label }} — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Decisions — {{ stage_label }}</li>
+  </ol>
+</nav>
+
+<!-- Stage switcher + search row -->
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+  <div class="btn-group btn-group-sm" role="group">
+    {% for s in STAGES %}
+    <a href="{{ url_for('decisions_overview', pid=project.id, stage=s) }}"
+       class="btn btn-{% if s == stage %}primary{% else %}outline-secondary{% endif %}">
+      {{ STAGE_LABELS[s] }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <input type="search" id="dec-search" class="form-control form-control-sm"
+         style="max-width:22rem" placeholder="Search title…" autocomplete="off">
+
+  <!-- Filter tabs -->
+  <div class="d-flex gap-1 flex-wrap" id="filter-btns">
+    <button type="button" class="btn btn-sm btn-outline-secondary active" data-filter="all">
+      All <span class="badge bg-secondary ms-1" id="cnt-all">{{ paper_data|length }}</span>
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-warning" data-filter="conflict">
+      Conflicts
+      <span class="badge bg-warning text-dark ms-1" id="cnt-conflict">
+        {{ paper_data | selectattr('has_conflict') | list | length }}
+      </span>
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-primary" data-filter="override">
+      With override
+      <span class="badge bg-primary ms-1" id="cnt-override">
+        {{ paper_data | selectattr('group') | list | length }}
+      </span>
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-success" data-filter="include">Include</button>
+    <button type="button" class="btn btn-sm btn-outline-danger"  data-filter="exclude">Exclude</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-filter="noreviews">No reviews yet</button>
+  </div>
+</div>
+
+{% if not paper_data %}
+<div class="card">
+  <div class="card-body text-muted">No eligible papers for this stage yet.</div>
+</div>
+{% else %}
+<form method="post" id="decisions-form">
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:72vh; overflow-y:auto">
+      <table class="table table-hover table-sm align-middle mb-0" id="dec-table">
+        <thead class="table-light sticky-top">
+          <tr>
+            <th style="min-width:14rem">Paper</th>
+            {% for r in reviewers %}
+            <th class="text-center" style="width:7rem">{{ r.name }}</th>
+            {% endfor %}
+            <th class="text-center" style="width:7rem">Consensus</th>
+            <th style="min-width:10rem">
+              Group override
+              <i class="bi bi-info-circle text-muted ms-1"
+                 title="Overrides consensus for exports and records. Leave blank to use computed consensus."
+                 style="font-size:.8rem"></i>
+            </th>
+            <th style="min-width:10rem">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pd in paper_data %}
+          {% set paper = pd.paper %}
+          <tr class="dec-row"
+              data-conflict="{{ '1' if pd.has_conflict else '0' }}"
+              data-override="{{ '1' if pd.group else '0' }}"
+              data-consensus="{{ pd.consensus or '' }}"
+              data-noreviews="{{ '1' if not pd.rev_map else '0' }}">
+            <td>
+              {% if not paper.doi %}
+              <i class="bi bi-exclamation-triangle-fill text-warning me-1"
+                 style="font-size:.75rem" title="No DOI"></i>
+              {% endif %}
+              <span class="small fw-semibold dec-title">{{ paper.title or '(no title)' }}</span>
+              {% if paper.year %}
+              <span class="badge bg-light text-dark ms-1" style="font-size:.7rem">{{ paper.year }}</span>
+              {% endif %}
+            </td>
+            {% for r in reviewers %}
+            {% set d = pd.rev_map.get(r.id) %}
+            <td class="text-center">
+              {% if d %}
+              <span class="badge badge-{{ d }}">{{ d | capitalize }}</span>
+              {% else %}
+              <span class="text-muted" style="font-size:.75rem">—</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+            <td class="text-center">
+              {% if pd.consensus %}
+              <span class="badge badge-{{ pd.consensus }}">{{ pd.consensus | capitalize }}</span>
+              {% else %}
+              <span class="text-muted" style="font-size:.75rem">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <select name="override_{{ paper.id }}"
+                      class="form-select form-select-sm override-sel">
+                <option value="">— use consensus —</option>
+                <option value="include"
+                  {% if pd.group and pd.group.decision == 'include' %}selected{% endif %}>
+                  ✓ Include
+                </option>
+                <option value="uncertain"
+                  {% if pd.group and pd.group.decision == 'uncertain' %}selected{% endif %}>
+                  ? Uncertain
+                </option>
+                <option value="exclude"
+                  {% if pd.group and pd.group.decision == 'exclude' %}selected{% endif %}>
+                  ✕ Exclude
+                </option>
+              </select>
+            </td>
+            <td>
+              <input type="text" name="notes_{{ paper.id }}"
+                     class="form-control form-control-sm"
+                     placeholder="Reason for override…"
+                     value="{{ pd.group.notes if pd.group and pd.group.notes else '' }}">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex align-items-center gap-3 mt-3">
+  <button type="submit" class="btn btn-primary">
+    <i class="bi bi-check-lg me-1"></i>Save group decisions
+  </button>
+  <span class="text-muted small" id="changed-hint" style="display:none">
+    <i class="bi bi-circle-fill text-warning me-1" style="font-size:.5rem"></i>
+    Unsaved changes
+  </span>
+  <div class="ms-auto text-muted small" id="visible-count"></div>
+</div>
+</form>
+
+<div class="text-muted small mt-2" id="no-results" style="display:none">
+  No papers match the current filter.
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const rows        = document.querySelectorAll('.dec-row');
+const searchInput = document.getElementById('dec-search');
+const filterBtns  = document.querySelectorAll('[data-filter]');
+const noResults   = document.getElementById('no-results');
+const visCount    = document.getElementById('visible-count');
+const changedHint = document.getElementById('changed-hint');
+
+let activeFilter = 'all';
+
+function applyFilters() {
+  const q = (searchInput.value || '').toLowerCase();
+  let visible = 0;
+
+  rows.forEach(row => {
+    const title    = (row.querySelector('.dec-title')?.textContent || '').toLowerCase();
+    const conflict = row.dataset.conflict === '1';
+    const override = row.dataset.override === '1';
+    const consensus = row.dataset.consensus;
+    const norev    = row.dataset.noreviews === '1';
+
+    const matchSearch = !q || title.includes(q);
+    let   matchFilter = true;
+    if      (activeFilter === 'conflict')   matchFilter = conflict;
+    else if (activeFilter === 'override')   matchFilter = override;
+    else if (activeFilter === 'include')    matchFilter = consensus === 'include';
+    else if (activeFilter === 'exclude')    matchFilter = consensus === 'exclude';
+    else if (activeFilter === 'noreviews')  matchFilter = norev;
+
+    const show = matchSearch && matchFilter;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  noResults.style.display = visible === 0 ? '' : 'none';
+  if (visCount) visCount.textContent = `Showing ${visible} of ${rows.length} papers`;
+}
+
+searchInput.addEventListener('input', applyFilters);
+
+filterBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    filterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    applyFilters();
+  });
+});
+
+// Highlight rows with an active override
+function styleOverrideRows() {
+  document.querySelectorAll('.override-sel').forEach(sel => {
+    const row = sel.closest('tr');
+    if (sel.value) {
+      row.classList.add('table-info');
+    } else {
+      row.classList.remove('table-info');
+    }
+    // Sync data attr for filter
+    row.dataset.override = sel.value ? '1' : '0';
+  });
+}
+
+document.querySelectorAll('.override-sel').forEach(sel => {
+  sel.addEventListener('change', () => {
+    styleOverrideRows();
+    if (changedHint) changedHint.style.display = '';
+  });
+});
+
+document.querySelectorAll('input[name^="notes_"]').forEach(inp => {
+  inp.addEventListener('input', () => {
+    if (changedHint) changedHint.style.display = '';
+  });
+});
+
+// Warn before leaving with unsaved changes
+let formDirty = false;
+document.querySelectorAll('.override-sel, input[name^="notes_"]').forEach(el => {
+  el.addEventListener('change', () => { formDirty = true; });
+  el.addEventListener('input',  () => { formDirty = true; });
+});
+window.addEventListener('beforeunload', e => {
+  if (formDirty) { e.preventDefault(); e.returnValue = ''; }
+});
+document.getElementById('decisions-form')?.addEventListener('submit', () => {
+  formDirty = false;
+});
+
+styleOverrideRows();
+applyFilters();
+</script>
+{% endblock %}

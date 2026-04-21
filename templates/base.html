@@ -35,14 +35,26 @@
           </a>
         </li>
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle{% if 'review' in (request.endpoint or '') %} active{% endif %}"
+          <a class="nav-link dropdown-toggle{% if 'review' in (request.endpoint or '') or 'decisions' in (request.endpoint or '') %} active{% endif %}"
              href="#" role="button" data-bs-toggle="dropdown">
             <i class="bi bi-check2-square me-1"></i>Review
           </a>
           <ul class="dropdown-menu">
+            <li><h6 class="dropdown-header">Screen papers</h6></li>
             <li><a class="dropdown-item" href="{{ url_for('review_start', pid=project.id, stage='title') }}">Title Review</a></li>
             <li><a class="dropdown-item" href="{{ url_for('review_start', pid=project.id, stage='abstract') }}">Abstract Review</a></li>
             <li><a class="dropdown-item" href="{{ url_for('review_start', pid=project.id, stage='fulltext') }}">Full-Text Review</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><h6 class="dropdown-header">Group decisions</h6></li>
+            <li><a class="dropdown-item" href="{{ url_for('decisions_overview', pid=project.id, stage='title') }}">
+              <i class="bi bi-card-heading me-2"></i>Title Decisions
+            </a></li>
+            <li><a class="dropdown-item" href="{{ url_for('decisions_overview', pid=project.id, stage='abstract') }}">
+              <i class="bi bi-text-paragraph me-2"></i>Abstract Decisions
+            </a></li>
+            <li><a class="dropdown-item" href="{{ url_for('decisions_overview', pid=project.id, stage='fulltext') }}">
+              <i class="bi bi-file-earmark-text me-2"></i>Full-Text Decisions
+            </a></li>
           </ul>
         </li>
         <li class="nav-item dropdown">

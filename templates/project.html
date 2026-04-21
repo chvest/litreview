@@ -108,16 +108,39 @@
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start mb-2">
           <h6 class="card-title mb-0">{{ info.label }}</h6>
-          <span class="badge bg-light text-dark">{{ info.eligible }} eligible</span>
+          <div class="d-flex gap-1 flex-wrap justify-content-end">
+            {% if info.pilot_size %}
+            <span class="badge bg-warning text-dark">
+              <i class="bi bi-cone-striped me-1"></i>Pilot — {{ info.pilot_size }} papers
+            </span>
+            {% endif %}
+            <span class="badge bg-light text-dark">{{ info.eligible }} eligible</span>
+          </div>
         </div>
         <div class="progress mb-2" style="height:8px">
           <div class="progress-bar" style="width:{{ pct }}%"></div>
         </div>
         <div class="progress-label">{{ info.reviewed }} / {{ info.eligible }} papers reviewed ({{ pct }}%)</div>
-        <a href="{{ url_for('review_start', pid=project.id, stage=stage) }}"
-           class="btn btn-sm btn-primary mt-3 w-100">
-          <i class="bi bi-arrow-right-circle me-1"></i>Go to {{ info.label }}
-        </a>
+        {% if info.pilot_size %}
+        <div class="progress mt-2 mb-1" style="height:5px">
+          {% set ppct = ((info.reviewed / info.pilot_size * 100) | int) if info.pilot_size > 0 else 0 %}
+          <div class="progress-bar bg-warning" style="width:{{ [ppct, 100] | min }}%"></div>
+        </div>
+        <div class="progress-label text-warning-emphasis">
+          <i class="bi bi-cone-striped me-1"></i>{{ [info.reviewed, info.pilot_size] | min }} / {{ info.pilot_size }} pilot papers reviewed
+        </div>
+        {% endif %}
+        <div class="d-flex gap-2 mt-3">
+          <a href="{{ url_for('review_start', pid=project.id, stage=stage) }}"
+             class="btn btn-sm btn-primary flex-grow-1">
+            <i class="bi bi-arrow-right-circle me-1"></i>Go to {{ info.label }}
+          </a>
+          <a href="{{ url_for('decisions_overview', pid=project.id, stage=stage) }}"
+             class="btn btn-sm btn-outline-secondary"
+             title="Group decisions for {{ info.label }}">
+            <i class="bi bi-people-fill"></i>
+          </a>
+        </div>
       </div>
     </div>
   </div>
