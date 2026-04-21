@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Cohen's κ — {{ project.name }}{% endblock %}
+{% block title %}Agreement — {{ project.name }}{% endblock %}
 
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
-    <li class="breadcrumb-item active">Cohen's κ</li>
+    <li class="breadcrumb-item active">Agreement</li>
   </ol>
 </nav>
 

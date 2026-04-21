@@ -92,6 +92,10 @@ mark.hl-both {
 .criteria-panel .list-group-item { padding: .35rem .75rem; }
 .criteria-panel .badge { font-size: .75rem; min-width: 2.5rem; }
 
+/* ── Stat cards (dashboard top row) ─────────────────────────────────────── */
+.stat-card { min-height: 120px; }
+.stat-card .card-body { padding: 1.25rem 1rem; }
+
 /* ── Progress bar label ──────────────────────────────────────────────────── */
 .progress-label { font-size: .78rem; color: #6c757d; }
 
