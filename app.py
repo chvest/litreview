@@ -590,10 +590,9 @@ def import_papers(pid):
             flash(f"Error reading file: {e}", "danger")
             return redirect(request.url)
 
+        # Store only the filepath — columns and preview are re-read from disk
+        # on the next step to avoid overflowing the 4KB session cookie limit.
         session["import_file"] = filepath
-        session["import_columns"] = list(df.columns)
-        # Store a safe preview (convert NaN to empty string)
-        session["import_preview"] = df.head(3).fillna("").astype(str).to_dict("records")
         return redirect(url_for("import_columns", pid=pid))
     return render_template("import.html", project=project)
 
@@ -604,8 +603,14 @@ def import_columns(pid):
     if "import_file" not in session:
         return redirect(url_for("import_papers", pid=pid))
 
-    columns = session.get("import_columns", [])
-    preview = session.get("import_preview", [])
+    filepath = session["import_file"]
+    try:
+        df_preview = read_upload_file(filepath)
+    except Exception as e:
+        flash(f"Error reading file: {e}", "danger")
+        return redirect(url_for("import_papers", pid=pid))
+    columns  = list(df_preview.columns)
+    preview  = df_preview.head(3).fillna("").astype(str).to_dict("records")
     suggested = detect_column_mapping(columns)
 
     if request.method == "POST":
