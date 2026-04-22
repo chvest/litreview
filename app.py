@@ -1783,6 +1783,49 @@ def export_reviews(pid):
                      download_name=f"{project.name}_{stage}_{safe_name}_decisions.csv")
 
 
+@app.route("/project/<int:pid>/export-reviews/all")
+def export_reviews_all(pid):
+    """Export all stages for one reviewer as a single multi-sheet Excel file."""
+    project     = Project.query.get_or_404(pid)
+    reviewer_id = request.args.get("reviewer_id", type=int)
+    reviewer    = Reviewer.query.get_or_404(reviewer_id)
+
+    if reviewer.project_id != pid:
+        return redirect(url_for("assignment_workspace", pid=pid))
+
+    out = os.path.join(app.config["UPLOAD_FOLDER"],
+                       f"reviews_{pid}_all_{reviewer_id}.xlsx")
+    safe_name = reviewer.name.replace(" ", "_")
+
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        has_data = False
+        for stage in ["title", "abstract", "fulltext"]:
+            reviews = (Review.query
+                       .filter_by(reviewer_id=reviewer_id, stage=stage)
+                       .join(Paper).filter(Paper.project_id == pid)
+                       .all())
+            if not reviews:
+                continue
+            rows = [{
+                "Title":    r.paper.title   or "",
+                "DOI":      r.paper.doi     or "",
+                "Authors":  r.paper.authors or "",
+                "Year":     r.paper.year    or "",
+                "Decision": DECISION_TO_NUM.get(r.decision, ""),
+                "Notes":    r.notes or "",
+            } for r in reviews]
+            pd.DataFrame(rows).to_excel(writer, index=False,
+                                        sheet_name=stage.capitalize())
+            has_data = True
+
+        if not has_data:
+            pd.DataFrame(columns=["Title","DOI","Authors","Year","Decision","Notes"])\
+              .to_excel(writer, index=False, sheet_name="No decisions")
+
+    return send_file(out, as_attachment=True,
+                     download_name=f"{project.name}_{safe_name}_decisions.xlsx")
+
+
 @app.route("/project/<int:pid>/export-reviews/combined")
 def export_reviews_combined(pid):
     """Wide-format export with one column per reviewer + a consensus column."""

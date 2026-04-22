@@ -7,7 +7,13 @@
     <h4 class="mb-0"><i class="bi bi-person-check text-primary me-2"></i>Assignment Workspace</h4>
     <div class="text-muted small mt-1">{{ project.name }}</div>
   </div>
-  <div class="ms-auto">
+  <div class="ms-auto d-flex gap-2 flex-wrap">
+    {% if reviewer %}
+    <a href="{{ url_for('export_reviews_all', pid=project.id, reviewer_id=reviewer.id) }}"
+       class="btn btn-success">
+      <i class="bi bi-download me-1"></i>Export all my decisions
+    </a>
+    {% endif %}
     <a href="{{ url_for('project_dashboard', pid=project.id) }}"
        class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-grid-3x3-gap me-1"></i>Full Dashboard
@@ -153,9 +159,9 @@
         <h6><i class="bi bi-signpost-split me-2 text-info"></i>Workflow</h6>
         <ol class="text-muted ps-3 mb-0">
           <li class="mb-1">Set your name above.</li>
-          <li class="mb-1">Review all papers in each stage using the buttons above.</li>
-          <li class="mb-1">Click <strong>Export decisions</strong> next to each stage when done.</li>
-          <li>Send the exported file(s) back to the lead reviewer.</li>
+          <li class="mb-1">Review all papers in each stage using the buttons on the left.</li>
+          <li class="mb-1">Click <strong>Export all my decisions</strong> (top right) when done.</li>
+          <li>Send the exported file back to the lead reviewer.</li>
         </ol>
       </div>
     </div>
