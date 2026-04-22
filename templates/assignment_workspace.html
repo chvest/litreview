@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Assignment Workspace — {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4 gap-3 flex-wrap">
+  <div>
+    <h4 class="mb-0"><i class="bi bi-person-check text-primary me-2"></i>Assignment Workspace</h4>
+    <div class="text-muted small mt-1">{{ project.name }}</div>
+  </div>
+  <div class="ms-auto">
+    <a href="{{ url_for('project_dashboard', pid=project.id) }}"
+       class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-grid-3x3-gap me-1"></i>Full Dashboard
+    </a>
+  </div>
+</div>
+
+<div class="row g-4">
+
+  <!-- Left column: reviewer + stages -->
+  <div class="col-lg-7">
+
+    <!-- Reviewer selector -->
+    <div class="card mb-4">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-person me-2 text-primary"></i>Reviewer</h6>
+      </div>
+      <div class="card-body">
+        {% if reviewer %}
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <span class="badge bg-primary fs-6">{{ reviewer.name }}</span>
+          <span class="text-muted small">reviewing as</span>
+        </div>
+        {% endif %}
+        <form method="post">
+          <input type="hidden" name="action" value="set_reviewer">
+          <div class="d-flex gap-2 align-items-end flex-wrap">
+            {% if reviewers %}
+            <div class="flex-grow-1">
+              <label class="form-label small fw-semibold mb-1">
+                {% if reviewer %}Switch reviewer{% else %}Select your name{% endif %}
+              </label>
+              <select name="reviewer_id" class="form-select form-select-sm">
+                <option value="">— create new —</option>
+                {% for r in reviewers %}
+                <option value="{{ r.id }}" {% if reviewer and r.id == reviewer.id %}selected{% endif %}>
+                  {{ r.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <span class="text-muted small mb-2">or</span>
+            {% endif %}
+            <div class="flex-grow-1">
+              <label class="form-label small fw-semibold mb-1">New reviewer name</label>
+              <input type="text" name="new_reviewer_name" class="form-control form-control-sm"
+                     placeholder="Your name…">
+            </div>
+            <button type="submit" class="btn btn-sm btn-outline-primary mb-0">
+              <i class="bi bi-check me-1"></i>Set
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Review stages -->
+    {% if stage_info %}
+    {% for si in stage_info %}
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <h6 class="mb-0">{{ si.label }}</h6>
+          <span class="badge bg-light text-dark">{{ si.total }} papers</span>
+        </div>
+        <div class="progress mb-1" style="height:8px">
+          <div class="progress-bar bg-success" style="width:{{ si.pct }}%"></div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mt-2">
+          <span class="progress-label">{{ si.done }} / {{ si.total }} reviewed ({{ si.pct }}%)</span>
+          <div class="d-flex gap-2">
+            {% if reviewer %}
+            <a href="{{ url_for('export_reviews', pid=project.id, stage=si.stage, reviewer_id=reviewer.id) }}"
+               class="btn btn-sm btn-outline-success"
+               title="Export all your decisions for this stage">
+              <i class="bi bi-download me-1"></i>Export decisions
+            </a>
+            {% endif %}
+            <a href="{{ url_for('review_start', pid=project.id, stage=si.stage) }}"
+               class="btn btn-sm btn-primary">
+              {% if si.done == 0 %}<i class="bi bi-play-fill me-1"></i>Start
+              {% elif si.done < si.total %}<i class="bi bi-arrow-right-circle me-1"></i>Continue
+              {% else %}<i class="bi bi-check-circle me-1"></i>Review
+              {% endif %}
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% else %}
+    <div class="card">
+      <div class="card-body text-muted small">
+        No papers imported yet.
+        <a href="{{ url_for('import_assignment_papers', pid=project.id) }}">Import an assignment file</a>
+        to get started.
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Right column: criteria + help -->
+  <div class="col-lg-5">
+
+    {% if inclusion_criteria or exclusion_criteria %}
+    <div class="card mb-4 sticky-top" style="top:1rem">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-list-check me-2 text-primary"></i>Review Criteria</h6>
+      </div>
+      {% if inclusion_criteria %}
+      <div class="card-body py-2 pb-0">
+        <div class="small fw-semibold text-success mb-1">Inclusion</div>
+        <ul class="list-group list-group-flush mb-2">
+          {% for c in inclusion_criteria %}
+          <li class="list-group-item px-0 py-1 d-flex gap-2 align-items-start">
+            <span class="badge bg-success mt-1 flex-shrink-0" style="font-size:.72rem; min-width:2.2rem">{{ c.code }}</span>
+            <span class="small">{{ c.description }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      {% if exclusion_criteria %}
+      <div class="card-body py-2 pt-0">
+        <div class="small fw-semibold text-danger mb-1">Exclusion</div>
+        <ul class="list-group list-group-flush">
+          {% for c in exclusion_criteria %}
+          <li class="list-group-item px-0 py-1 d-flex gap-2 align-items-start">
+            <span class="badge bg-danger mt-1 flex-shrink-0" style="font-size:.72rem; min-width:2.2rem">{{ c.code }}</span>
+            <span class="small">{{ c.description }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-body small">
+        <h6><i class="bi bi-signpost-split me-2 text-info"></i>Workflow</h6>
+        <ol class="text-muted ps-3 mb-0">
+          <li class="mb-1">Set your name above.</li>
+          <li class="mb-1">Review all papers in each stage using the buttons above.</li>
+          <li class="mb-1">Click <strong>Export decisions</strong> next to each stage when done.</li>
+          <li>Send the exported file(s) back to the lead reviewer.</li>
+        </ol>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

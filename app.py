@@ -355,6 +355,32 @@ _COL_ALIASES = {
 }
 
 
+def _write_assignment_xlsx(filepath, papers, project_id):
+    """Write an assignment Excel file with a Papers sheet and a Criteria sheet."""
+    papers_df = pd.DataFrame([{
+        "Title":    p.title    or "",
+        "Authors":  p.authors  or "",
+        "Abstract": p.abstract or "",
+        "Year":     p.year     or "",
+        "DOI":      p.doi      or "",
+        "Decision": "",
+        "Notes":    "",
+    } for p in papers])
+
+    criteria = Criterion.query.filter_by(project_id=project_id).order_by(
+        Criterion.type, Criterion.sort_order).all()
+    criteria_df = pd.DataFrame([{
+        "Type":        c.type.capitalize(),
+        "Code":        c.code or "",
+        "Description": c.description or "",
+    } for c in criteria]) if criteria else pd.DataFrame(
+        columns=["Type", "Code", "Description"])
+
+    with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
+        papers_df.to_excel(writer, sheet_name="Papers", index=False)
+        criteria_df.to_excel(writer, sheet_name="Criteria", index=False)
+
+
 def detect_column_mapping(columns):
     """Return a {field: column_name} dict by matching column headers against
     known aliases for IEEE, Web of Science, Scopus, PubMed, etc."""
@@ -647,6 +673,32 @@ def import_assignment_papers(pid):
             flash(f"Error reading file: {e}", "danger")
             return redirect(request.url)
 
+        # Import criteria from a "Criteria" sheet if present (xlsx only)
+        criteria_imported = 0
+        if filepath.lower().endswith((".xlsx", ".xls")):
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(filepath, read_only=True)
+                if "Criteria" in wb.sheetnames:
+                    cdf = pd.read_excel(filepath, sheet_name="Criteria", engine="openpyxl")
+                    c_col = {c.strip().lower(): c for c in cdf.columns}
+                    for _, crow in cdf.iterrows():
+                        ctype = str(crow.get(c_col.get("type", ""), "") or "").strip().lower()
+                        ccode = str(crow.get(c_col.get("code", ""), "") or "").strip()
+                        cdesc = str(crow.get(c_col.get("description", ""), "") or "").strip()
+                        if ctype not in ("inclusion", "exclusion") or not cdesc:
+                            continue
+                        # Skip if identical criterion already exists
+                        exists = Criterion.query.filter_by(
+                            project_id=pid, type=ctype, description=cdesc).first()
+                        if not exists:
+                            db.session.add(Criterion(
+                                project_id=pid, type=ctype,
+                                code=ccode or None, description=cdesc))
+                            criteria_imported += 1
+            except Exception:
+                pass  # criteria import is best-effort
+
         # Case-insensitive column lookup
         col = {c.strip().lower(): c for c in df.columns}
 
@@ -704,10 +756,78 @@ def import_assignment_papers(pid):
         msg = f"Imported {imported} paper(s)."
         if skipped:
             msg += f" Skipped {skipped} duplicate(s)."
+        if criteria_imported:
+            msg += f" Imported {criteria_imported} review criteria from the assignment."
         flash(msg, "success")
-        return redirect(url_for("project_dashboard", pid=pid))
+        return redirect(url_for("assignment_workspace", pid=pid))
 
     return render_template("import_assignment.html", project=project)
+
+
+# ── Assignment workspace ──────────────────────────────────────────────────────
+
+@app.route("/project/<int:pid>/workspace", methods=["GET", "POST"])
+def assignment_workspace(pid):
+    """Simplified view for a reviewer working through an assignment.
+
+    Shows only what an assignment reviewer needs: their name, progress per
+    stage, review criteria, and an export button.
+    """
+    project   = Project.query.get_or_404(pid)
+    reviewers = Reviewer.query.filter_by(project_id=pid).all()
+    reviewer  = current_reviewer(pid)
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "set_reviewer":
+            rid = request.form.get("reviewer_id", type=int)
+            new_name = request.form.get("new_reviewer_name", "").strip()
+            if rid:
+                r = Reviewer.query.get(rid)
+                if r and r.project_id == pid:
+                    session[f"reviewer_{pid}"] = r.id
+            elif new_name:
+                r = Reviewer.query.filter_by(project_id=pid, name=new_name).first()
+                if not r:
+                    r = Reviewer(project_id=pid, name=new_name)
+                    db.session.add(r)
+                    db.session.commit()
+                session[f"reviewer_{pid}"] = r.id
+            return redirect(url_for("assignment_workspace", pid=pid))
+
+    inclusion_criteria = Criterion.query.filter_by(
+        project_id=pid, type="inclusion").order_by(Criterion.sort_order).all()
+    exclusion_criteria = Criterion.query.filter_by(
+        project_id=pid, type="exclusion").order_by(Criterion.sort_order).all()
+
+    stage_info = []
+    for stage in STAGES:
+        papers = get_eligible_papers(pid, stage, ignore_pilot=True)
+        if not papers:
+            continue
+        if reviewer:
+            revs = {r.paper_id for r in
+                    Review.query.filter_by(reviewer_id=reviewer.id, stage=stage)
+                    .join(Paper).filter(Paper.project_id == pid).all()}
+            done = len(revs)
+        else:
+            done = 0
+        stage_info.append({
+            "stage": stage,
+            "label": STAGE_LABELS[stage],
+            "total": len(papers),
+            "done":  done,
+            "pct":   int(done / len(papers) * 100) if papers else 0,
+        })
+
+    return render_template("assignment_workspace.html",
+                           project=project,
+                           reviewer=reviewer,
+                           reviewers=reviewers,
+                           stage_info=stage_info,
+                           inclusion_criteria=inclusion_criteria,
+                           exclusion_criteria=exclusion_criteria,
+                           DECISION_TO_NUM=DECISION_TO_NUM)
 
 
 # ── Import reviews ────────────────────────────────────────────────────────────
@@ -1243,23 +1363,12 @@ def pilot_export_assignment(pid):
 
     paper_ids = [pp.paper_id for pp in active.papers]
     papers = Paper.query.filter(Paper.id.in_(paper_ids)).all()
-    rows = [{
-        "Title":    p.title    or "",
-        "Authors":  p.authors  or "",
-        "Abstract": p.abstract or "",
-        "Year":     p.year     or "",
-        "DOI":      p.doi      or "",
-        "Decision": "",
-        "Notes":    "",
-    } for p in papers]
-
-    df  = pd.DataFrame(rows)
-    out = os.path.join(app.config["UPLOAD_FOLDER"],
-                       f"pilot_assignment_{pid}_{stage}.csv")
-    df.to_csv(out, index=False)
     project_safe = project.name.replace(" ", "_")
+    out = os.path.join(app.config["UPLOAD_FOLDER"],
+                       f"pilot_assignment_{pid}_{stage}.xlsx")
+    _write_assignment_xlsx(out, papers, pid)
     return send_file(out, as_attachment=True,
-                     download_name=f"{project_safe}_{stage}_pilot_assignment.csv")
+                     download_name=f"{project_safe}_{stage}_pilot_assignment.xlsx")
 
 
 @app.route("/project/<int:pid>/pilot/advance", methods=["POST"])
@@ -1770,31 +1879,19 @@ def generate_assignment(pid):
             flash("No papers to assign for the selected options.", "warning")
             return redirect(request.url)
 
-        def make_df(papers):
-            return pd.DataFrame([{
-                "Title":    p.title    or "",
-                "Authors":  p.authors  or "",
-                "Abstract": p.abstract or "",
-                "Year":     p.year     or "",
-                "DOI":      p.doi      or "",
-                "Decision": "",
-                "Notes":    "",
-            } for p in papers])
-
         project_safe = project.name.replace(" ", "_")
 
-        # ── Single reviewer → one CSV ──────────────────────────────────────────
+        # ── Single reviewer → one xlsx ─────────────────────────────────────────
         if n == 1:
             rv      = Reviewer.query.get(reviewer_ids[0])
             rv_safe = rv.name.replace(" ", "_")
-            df      = make_df(eligible)
             out     = os.path.join(app.config["UPLOAD_FOLDER"],
-                                   f"assign_{pid}_{stage}_{rv_safe}.csv")
-            df.to_csv(out, index=False)
+                                   f"assign_{pid}_{stage}_{rv_safe}.xlsx")
+            _write_assignment_xlsx(out, eligible, pid)
             return send_file(out, as_attachment=True,
-                             download_name=f"{project_safe}_{stage}_{rv_safe}_assignment.csv")
+                             download_name=f"{project_safe}_{stage}_{rv_safe}_assignment.xlsx")
 
-        # ── Multiple reviewers → ZIP, one CSV per reviewer ────────────────────
+        # ── Multiple reviewers → ZIP, one xlsx per reviewer ───────────────────
         # Round-robin overlap: paper i is assigned to reviewers at positions
         # [(i + j) % n for j in range(reviewers_per_paper)]
         per_reviewer = {rid: [] for rid in reviewer_ids}
@@ -1807,9 +1904,11 @@ def generate_assignment(pid):
             for rid in reviewer_ids:
                 rv      = Reviewer.query.get(rid)
                 rv_safe = rv.name.replace(" ", "_")
-                csv_str = make_df(per_reviewer[rid]).to_csv(index=False)
-                zf.writestr(f"{project_safe}_{stage}_{rv_safe}_assignment.csv",
-                            csv_str.encode("utf-8"))
+                tmp = os.path.join(app.config["UPLOAD_FOLDER"],
+                                   f"_tmp_assign_{rid}.xlsx")
+                _write_assignment_xlsx(tmp, per_reviewer[rid], pid)
+                zf.write(tmp, f"{project_safe}_{stage}_{rv_safe}_assignment.xlsx")
+                os.remove(tmp)
         buf.seek(0)
         return send_file(buf, as_attachment=True,
                          mimetype="application/zip",
