@@ -795,6 +795,17 @@ def assignment_workspace(pid):
                 session[f"reviewer_{pid}"] = r.id
             return redirect(url_for("assignment_workspace", pid=pid))
 
+        if action == "clear_assignment":
+            paper_ids = [p.id for p in Paper.query.filter_by(project_id=pid).all()]
+            if paper_ids:
+                ReviewOrder.query.filter(ReviewOrder.paper_id.in_(paper_ids)).delete(synchronize_session=False)
+                PilotPaper.query.filter(PilotPaper.paper_id.in_(paper_ids)).delete(synchronize_session=False)
+                Review.query.filter(Review.paper_id.in_(paper_ids)).delete(synchronize_session=False)
+                Paper.query.filter(Paper.id.in_(paper_ids)).delete(synchronize_session=False)
+                db.session.commit()
+            flash("All imported papers and decisions have been removed.", "info")
+            return redirect(url_for("assignment_workspace", pid=pid))
+
     inclusion_criteria = Criterion.query.filter_by(
         project_id=pid, type="inclusion").order_by(Criterion.sort_order).all()
     exclusion_criteria = Criterion.query.filter_by(
