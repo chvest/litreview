@@ -48,6 +48,11 @@
           <span class="badge bg-primary fs-6">{{ reviewer.name }}</span>
           <span class="text-muted small">reviewing as</span>
         </div>
+        {% else %}
+        <div class="alert alert-warning py-2 small mb-3">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          Set your name before you can start reviewing.
+        </div>
         {% endif %}
         <form method="post">
           <input type="hidden" name="action" value="set_reviewer">
@@ -102,7 +107,6 @@
                title="Export your decisions for this stage only">
               <i class="bi bi-download me-1"></i>Export stage
             </a>
-            {% endif %}
             <a href="{{ url_for('review_start', pid=project.id, stage=si.stage) }}"
                class="btn btn-sm btn-primary">
               {% if si.done == 0 %}<i class="bi bi-play-fill me-1"></i>Start
@@ -110,6 +114,12 @@
               {% else %}<i class="bi bi-check-circle me-1"></i>Review
               {% endif %}
             </a>
+            {% else %}
+            <button class="btn btn-sm btn-primary" disabled
+                    title="Set your name above before starting">
+              <i class="bi bi-play-fill me-1"></i>Start
+            </button>
+            {% endif %}
           </div>
         </div>
       </div>

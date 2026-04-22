@@ -156,11 +156,13 @@
       {% else %}
       <div class="card-body text-muted small">
         {% if not reviewer %}
-        Select a reviewer to see the paper list.
+        <i class="bi bi-person me-1"></i>
+        Select a reviewer on the left to see the paper list.
         {% elif eligible_count == 0 %}
         No eligible papers for this stage yet.
         {% else %}
-        The review order will be generated when you start.
+        <i class="bi bi-play-fill me-1"></i>
+        Click <strong>Start Review</strong> on the left to begin.
         {% endif %}
       </div>
       {% endif %}
