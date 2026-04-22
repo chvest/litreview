@@ -130,9 +130,14 @@
         {% endif %}
 
         {% if stage == 'fulltext' %}
-        <div class="alert alert-info py-2 small mt-3 mb-0">
-          <i class="bi bi-info-circle me-1"></i>
-          Full-text review happens outside this tool. Record your decision below after reading the paper.
+        <div class="alert alert-info py-2 small mt-3 mb-0 d-flex align-items-center gap-3 flex-wrap">
+          <span><i class="bi bi-info-circle me-1"></i>Full-text review happens outside this tool. Record your decision below after reading the paper.</span>
+          {% if paper.doi %}
+          <a href="https://doi.org/{{ paper.doi }}" target="_blank"
+             class="btn btn-sm btn-outline-primary text-nowrap ms-auto">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Open full text
+          </a>
+          {% endif %}
         </div>
         {% endif %}
 
