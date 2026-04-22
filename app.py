@@ -832,19 +832,20 @@ def assignment_workspace(pid):
     if request.method == "POST":
         action = request.form.get("action")
         if action == "set_reviewer":
-            rid = request.form.get("reviewer_id", type=int)
             new_name = request.form.get("new_reviewer_name", "").strip()
-            if rid:
-                r = Reviewer.query.get(rid)
-                if r and r.project_id == pid:
-                    session[f"reviewer_{pid}"] = r.id
-            elif new_name:
+            rid = request.form.get("reviewer_id", type=int)
+            # New name takes priority — a filled text box overrides the dropdown
+            if new_name:
                 r = Reviewer.query.filter_by(project_id=pid, name=new_name).first()
                 if not r:
                     r = Reviewer(project_id=pid, name=new_name)
                     db.session.add(r)
                     db.session.commit()
                 session[f"reviewer_{pid}"] = r.id
+            elif rid:
+                r = Reviewer.query.get(rid)
+                if r and r.project_id == pid:
+                    session[f"reviewer_{pid}"] = r.id
             return redirect(url_for("assignment_workspace", pid=pid))
 
         if action == "clear_assignment":
