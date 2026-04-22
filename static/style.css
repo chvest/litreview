@@ -25,7 +25,10 @@ body { background: #f8f9fa; }
   word-break: break-word;
   max-height: 55vh;
   overflow-y: auto;
-  max-width: 72ch;
+}
+
+.abstract-box {
+  max-width: 100ch;
 }
 
 /* Subtle scrollbar for abstract */
