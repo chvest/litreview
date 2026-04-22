@@ -37,6 +37,12 @@
         {% endif %}
 
         <div class="d-flex gap-2 justify-content-center flex-wrap">
+          {% if reviewer %}
+          <a href="{{ url_for('assignment_workspace', pid=project.id) }}"
+             class="btn btn-success">
+            <i class="bi bi-download me-1"></i>Export decisions
+          </a>
+          {% endif %}
           {% if next_stage %}
           <a href="{{ url_for('review_start', pid=project.id, stage=next_stage) }}"
              class="btn btn-primary">
