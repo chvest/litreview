@@ -28,11 +28,12 @@
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
 
-      {% if request.endpoint == 'assignment_workspace' %}
+      {% if session.get('assignment_mode_' ~ project.id) %}
       <!-- Simplified navbar for assignment reviewers -->
       <ul class="navbar-nav me-auto">
         <li class="nav-item">
-          <a class="nav-link active" href="{{ url_for('assignment_workspace', pid=project.id) }}">
+          <a class="nav-link{% if request.endpoint == 'assignment_workspace' %} active{% endif %}"
+             href="{{ url_for('assignment_workspace', pid=project.id) }}">
             <i class="bi bi-person-check me-1"></i>Workspace
           </a>
         </li>
@@ -42,6 +43,11 @@
           </a>
         </li>
       </ul>
+      <a href="{{ url_for('project_dashboard', pid=project.id) }}"
+         class="navbar-text text-white-50 small me-3 text-decoration-none"
+         title="Switch to lead reviewer view">
+        <i class="bi bi-box-arrow-right me-1"></i>Lead view
+      </a>
 
       {% else %}
       <!-- Full navbar for lead reviewers -->

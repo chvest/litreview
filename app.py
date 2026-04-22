@@ -538,6 +538,8 @@ def project_home(pid):
 @app.route("/project/<int:pid>/dashboard")
 def project_dashboard(pid):
     project = Project.query.get_or_404(pid)
+    # Entering the lead dashboard exits assignment mode for this project.
+    session.pop(f"assignment_mode_{pid}", None)
     total = Paper.query.filter_by(project_id=pid).count()
 
     stages_info = {}
@@ -830,6 +832,8 @@ def assignment_workspace(pid):
     Shows only what an assignment reviewer needs: their name, progress per
     stage, review criteria, and an export button.
     """
+    # Mark this browser session as being in assignment-reviewer mode for this project.
+    session[f"assignment_mode_{pid}"] = True
     project   = Project.query.get_or_404(pid)
     reviewers = Reviewer.query.filter_by(project_id=pid).all()
     reviewer  = current_reviewer(pid)
