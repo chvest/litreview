@@ -110,9 +110,21 @@
 </div>
 
 <!-- Review stages -->
-<h5 class="mb-3 mt-1">
-  <i class="bi bi-check2-square text-primary me-2"></i>Review Progress
-</h5>
+<div class="d-flex align-items-center mb-3 mt-1 gap-3">
+  <h5 class="mb-0"><i class="bi bi-check2-square text-primary me-2"></i>Review Progress</h5>
+  <span class="text-muted small">
+    <i class="bi bi-funnel me-1"></i>Inclusion threshold:
+    <strong>
+      {% if project.threshold == 'any' %}Any non-excluded
+      {% elif project.threshold == 'majority' %}Majority non-excluded
+      {% elif project.threshold == 'all' %}All non-excluded
+      {% else %}≥ {{ project.threshold }} non-excluded
+      {% endif %}
+    </strong>
+    <a href="{{ url_for('project_settings', pid=project.id) }}"
+       class="ms-1 small">(change)</a>
+  </span>
+</div>
 <div class="row g-3 mb-4">
   {% for stage, info in stages_info.items() %}
   {% set pct = ((info.reviewed / info.eligible * 100) | int) if info.eligible > 0 else 0 %}

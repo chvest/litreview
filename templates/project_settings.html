@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Settings — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Settings</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <form method="post">
+
+      <!-- Project info -->
+      <div class="card mb-4">
+        <div class="card-header bg-white">
+          <h6 class="mb-0"><i class="bi bi-info-circle me-2 text-primary"></i>Project Details</h6>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Project name</label>
+            <input type="text" name="name" class="form-control"
+                   value="{{ project.name }}" required>
+          </div>
+          <div class="mb-0">
+            <label class="form-label fw-semibold">Description <span class="text-muted fw-normal">(optional)</span></label>
+            <textarea name="description" class="form-control" rows="2">{{ project.description or '' }}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inclusion threshold -->
+      <div class="card mb-4">
+        <div class="card-header bg-white">
+          <h6 class="mb-0"><i class="bi bi-funnel me-2 text-primary"></i>Inclusion Threshold</h6>
+        </div>
+        <div class="card-body">
+          <p class="small text-muted mb-3">
+            Controls how many reviewers must <strong>not exclude</strong> a paper for it to
+            advance to the next stage. Applies to title → abstract and abstract → full-text transitions.
+          </p>
+
+          {% for mode, label in THRESHOLD_LABELS.items() %}
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="radio" name="threshold"
+                   value="{{ mode }}" id="t_{{ mode }}"
+                   {% if threshold_mode == mode %}checked{% endif %}
+                   onchange="syncThresholdUI()">
+            <label class="form-check-label" for="t_{{ mode }}">
+              <span class="fw-semibold">{{ label.split(' — ')[0] }}</span>
+              <span class="text-muted small d-block">{{ label.split(' — ')[1] }}</span>
+            </label>
+          </div>
+          {% endfor %}
+
+          <!-- Min-N companion input -->
+          <div id="min-n-box" class="ms-4 mt-2 mb-1"
+               style="{{ '' if threshold_mode == 'min_n' else 'display:none' }}">
+            <div class="d-flex align-items-center gap-2">
+              <label class="small fw-semibold mb-0">Minimum reviewers:</label>
+              <input type="number" name="threshold_n" id="threshold_n"
+                     class="form-control form-control-sm" style="width:5rem"
+                     min="1" max="{{ n_reviewers if n_reviewers > 0 else 99 }}"
+                     value="{{ threshold_n }}">
+              {% if n_reviewers %}
+              <span class="text-muted small">of {{ n_reviewers }} reviewer{{ 's' if n_reviewers != 1 }}</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="alert alert-info py-2 small mt-3 mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            <strong>Uncertain</strong> decisions count as <em>non-excluded</em> — they do not block
+            a paper from advancing. Use the Group Decisions page to resolve uncertain papers manually.
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg me-1"></i>Save Settings
+        </button>
+        <a href="{{ url_for('project_dashboard', pid=project.id) }}"
+           class="btn btn-outline-secondary">Cancel</a>
+      </div>
+
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function syncThresholdUI() {
+  const sel = document.querySelector('input[name="threshold"]:checked');
+  document.getElementById('min-n-box').style.display =
+    sel && sel.value === 'min_n' ? '' : 'none';
+}
+</script>
+{% endblock %}

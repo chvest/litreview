@@ -19,6 +19,13 @@
       <div class="card-body">
         <p class="text-muted">Match each field to a column in your file. Only <strong>Title</strong> or <strong>DOI</strong> is required.</p>
 
+        {% if suggested %}
+        <div class="alert alert-success py-2 small mb-3">
+          <i class="bi bi-magic me-1"></i>
+          Columns auto-detected from your file — please verify and adjust if needed.
+        </div>
+        {% endif %}
+
         <form method="post">
           <div class="row g-3 mb-4">
             {% set fields = [
@@ -30,16 +37,19 @@
               ('col_source',   'Source / Database',False, 'bi-database'),
             ] %}
             {% for name, label, required, icon in fields %}
+            {% set auto = suggested.get(name, '') %}
             <div class="col-md-6">
               <label class="form-label fw-semibold">
                 <i class="bi {{ icon }} me-1 text-muted"></i>{{ label }}
                 {% if required %}<span class="text-danger">*</span>{% endif %}
+                {% if auto %}
+                <span class="badge bg-success ms-1" style="font-size:.65rem">auto</span>
+                {% endif %}
               </label>
               <select name="{{ name }}" class="form-select">
                 <option value="">— not mapped —</option>
                 {% for col in columns %}
-                <option value="{{ col }}"
-                  {% if col|lower == label|lower or col|lower == name[4:]|lower %}selected{% endif %}>
+                <option value="{{ col }}" {% if col == auto %}selected{% endif %}>
                   {{ col }}
                 </option>
                 {% endfor %}

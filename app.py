@@ -32,6 +32,8 @@ class Project(db.Model):
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Inclusion threshold: "any" | "majority" | "all" | integer string e.g. "2"
+    threshold = db.Column(db.String(20), default="any", server_default="any", nullable=False)
     papers = db.relationship("Paper", backref="project", lazy=True, cascade="all, delete-orphan")
     criteria = db.relationship("Criterion", backref="project", lazy=True, cascade="all, delete-orphan")
     reviewers = db.relationship("Reviewer", backref="project", lazy=True, cascade="all, delete-orphan")
@@ -141,16 +143,22 @@ def get_active_pilot(project_id, stage):
     ).first()
 
 
-def get_eligible_papers(project_id, stage, ignore_pilot=False):
+def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None):
     """Papers eligible for review at the given stage.
 
     title:    all papers
-    abstract: not unanimously excluded in title review
-    fulltext: not unanimously excluded in abstract review
+    abstract: papers that passed title review under the project threshold
+    fulltext: papers that passed abstract review under the project threshold
 
     When an active PilotBatch exists (and ignore_pilot is False), only those
     pilot papers are returned so the review flow stays within the pilot.
+
+    threshold overrides the project-level setting when provided explicitly.
     """
+    if threshold is None:
+        project = Project.query.get(project_id)
+        threshold = (project.threshold if project and project.threshold else "any")
+
     all_papers = Paper.query.filter_by(project_id=project_id).all()
     if stage == "title":
         eligible = all_papers
@@ -159,7 +167,7 @@ def get_eligible_papers(project_id, stage, ignore_pilot=False):
         eligible = []
         for paper in all_papers:
             prev_reviews = Review.query.filter_by(paper_id=paper.id, stage=prev_stage).all()
-            if prev_reviews and any(r.decision != "exclude" for r in prev_reviews):
+            if passes_threshold(prev_reviews, threshold):
                 eligible.append(paper)
 
     if not ignore_pilot:
@@ -282,16 +290,82 @@ def normalize_doi(d):
     return s
 
 
+def passes_threshold(reviews, threshold):
+    """Return True if a paper passes to the next stage under the given threshold.
+
+    reviews   — list of Review objects for one paper at one stage
+    threshold — "any"  : at least 1 reviewer did not exclude  (most inclusive)
+                "majority": strictly more than half did not exclude
+                "all"  : every reviewer must not have excluded (most strict)
+                "<int>": at least that many reviewers did not exclude
+    """
+    if not reviews:
+        return False
+    non_excluded = sum(1 for r in reviews if r.decision != "exclude")
+    total = len(reviews)
+    if threshold == "any":
+        return non_excluded >= 1
+    if threshold == "majority":
+        return non_excluded >= (total // 2 + 1)
+    if threshold == "all":
+        return non_excluded == total
+    try:
+        return non_excluded >= int(threshold)
+    except (ValueError, TypeError):
+        return non_excluded >= 1   # safe fallback
+
+
 def read_upload_file(filepath):
     """Read a CSV or Excel upload into a DataFrame.
 
     For CSV files uses sep=None / Python engine so that both comma- and
     semicolon-delimited files (common in European Excel exports) are handled
-    automatically.
+    automatically.  Old-style .xls (BIFF) files require xlrd; .xlsx uses
+    openpyxl (bundled with pandas).
     """
-    if filepath.lower().endswith((".xlsx", ".xls")):
-        return pd.read_excel(filepath)
+    ext = filepath.lower()
+    if ext.endswith(".xlsx"):
+        return pd.read_excel(filepath, engine="openpyxl")
+    if ext.endswith(".xls"):
+        return pd.read_excel(filepath, engine="xlrd")
     return pd.read_csv(filepath, encoding="utf-8-sig", sep=None, engine="python")
+
+
+# Known column-name aliases for common literature databases.
+# Keys match the form field names (without the "col_" prefix handled separately).
+_COL_ALIASES = {
+    "col_title": [
+        "title", "document title", "article title", "paper title",
+        "ti", "article name",
+    ],
+    "col_authors": [
+        "authors", "author", "author names", "author full names",
+        "au", "by",
+    ],
+    "col_abstract": ["abstract", "ab", "description"],
+    "col_year": [
+        "year", "publication year", "py", "pub year",
+        "publication date",          # fallback if year col absent
+    ],
+    "col_doi": ["doi", "di", "digital object identifier"],
+    "col_source": [
+        "source", "source title", "publication title", "journal",
+        "journal title", "so", "book series title",
+    ],
+}
+
+
+def detect_column_mapping(columns):
+    """Return a {field: column_name} dict by matching column headers against
+    known aliases for IEEE, Web of Science, Scopus, PubMed, etc."""
+    lower_map = {c.strip().lower(): c for c in columns}
+    mapping = {}
+    for field, aliases in _COL_ALIASES.items():
+        for alias in aliases:
+            if alias in lower_map:
+                mapping[field] = lower_map[alias]
+                break
+    return mapping
 
 
 def parse_decision_value(val):
@@ -338,6 +412,49 @@ def new_project():
     db.session.add(p)
     db.session.commit()
     return redirect(url_for("project_dashboard", pid=p.id))
+
+
+@app.route("/project/<int:pid>/settings", methods=["GET", "POST"])
+def project_settings(pid):
+    project = Project.query.get_or_404(pid)
+    reviewers = Reviewer.query.filter_by(project_id=pid).all()
+    n_reviewers = len(reviewers)
+
+    if request.method == "POST":
+        project.name = request.form.get("name", "").strip() or project.name
+        project.description = request.form.get("description", "").strip() or None
+
+        raw = request.form.get("threshold", "any")
+        # "min_n" option: use the companion number field
+        if raw == "min_n":
+            try:
+                n = int(request.form.get("threshold_n", 1))
+                raw = str(max(1, n))
+            except ValueError:
+                raw = "any"
+        project.threshold = raw
+
+        db.session.commit()
+        flash("Project settings saved.", "success")
+        return redirect(url_for("project_settings", pid=pid))
+
+    # Determine which radio to pre-select
+    t = project.threshold or "any"
+    threshold_mode = t if t in ("any", "majority", "all") else "min_n"
+    threshold_n    = int(t) if threshold_mode == "min_n" else 2
+
+    THRESHOLD_LABELS = {
+        "any":      "Any — paper advances if at least one reviewer included or was uncertain (most inclusive)",
+        "majority": "Majority — more than half of reviewers must have included or been uncertain",
+        "all":      "All — every reviewer must have included or been uncertain (most strict)",
+        "min_n":    "Minimum N — at least N reviewers must have included or been uncertain",
+    }
+
+    return render_template("project_settings.html", project=project,
+                           n_reviewers=n_reviewers,
+                           threshold_mode=threshold_mode,
+                           threshold_n=threshold_n,
+                           THRESHOLD_LABELS=THRESHOLD_LABELS)
 
 
 @app.route("/project/<int:pid>")
@@ -416,6 +533,7 @@ def import_columns(pid):
 
     columns = session.get("import_columns", [])
     preview = session.get("import_preview", [])
+    suggested = detect_column_mapping(columns)
 
     if request.method == "POST":
         mapping = {
@@ -497,7 +615,8 @@ def import_columns(pid):
         return redirect(url_for("project_dashboard", pid=pid))
 
     return render_template("column_map.html", project=project,
-                           columns=columns, preview=preview)
+                           columns=columns, preview=preview,
+                           suggested=suggested)
 
 
 # ── Import assignment (papers from a LitReview assignment file) ───────────────
@@ -1181,11 +1300,12 @@ def statistics(pid):
 
     funnel = [{"label": "Imported", "count": total}]
     for stage in STAGES:
-        eligible = get_eligible_papers(pid, stage)
+        eligible = get_eligible_papers(pid, stage, threshold=project.threshold)
         passed = sum(
             1 for p in eligible
-            if (lambda reviews: reviews and any(r.decision != "exclude" for r in reviews))(
-                Review.query.filter_by(paper_id=p.id, stage=stage).all()
+            if passes_threshold(
+                Review.query.filter_by(paper_id=p.id, stage=stage).all(),
+                project.threshold
             )
         )
         funnel.append({
@@ -1205,7 +1325,7 @@ def statistics(pid):
         last = stages_done[-1]
         for paper in Paper.query.filter_by(project_id=pid).all():
             reviews = Review.query.filter_by(paper_id=paper.id, stage=last).all()
-            if reviews and any(r.decision != "exclude" for r in reviews):
+            if passes_threshold(reviews, project.threshold):
                 final_included += 1
                 if paper.year:
                     papers_by_year[paper.year] += 1
@@ -1269,7 +1389,7 @@ def statistics(pid):
         source_counts[src]["total"] += 1
         if last_stage:
             revs = Review.query.filter_by(paper_id=paper.id, stage=last_stage).all()
-            if revs and any(r.decision != "exclude" for r in revs):
+            if passes_threshold(revs, project.threshold):
                 source_counts[src]["included"] += 1
     source_stats = sorted(source_counts.items(), key=lambda x: -x[1]["total"])
 
@@ -1703,6 +1823,15 @@ def generate_assignment(pid):
 
 with app.app_context():
     db.create_all()
+    # Migrate: add threshold column to existing projects tables
+    from sqlalchemy import text
+    try:
+        db.session.execute(text(
+            "ALTER TABLE projects ADD COLUMN threshold VARCHAR(20) NOT NULL DEFAULT 'any'"
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()   # column already exists — safe to ignore
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
