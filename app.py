@@ -483,6 +483,45 @@ def project_settings(pid):
                            THRESHOLD_LABELS=THRESHOLD_LABELS)
 
 
+@app.route("/project/<int:pid>/delete-papers", methods=["POST"])
+def delete_all_papers(pid):
+    """Delete every paper (and all dependent rows) for this project."""
+    Project.query.get_or_404(pid)
+    paper_ids = [p.id for p in Paper.query.filter_by(project_id=pid).all()]
+    if paper_ids:
+        ReviewOrder.query.filter(ReviewOrder.paper_id.in_(paper_ids)).delete(synchronize_session=False)
+        PilotPaper.query.filter(PilotPaper.paper_id.in_(paper_ids)).delete(synchronize_session=False)
+        Review.query.filter(Review.paper_id.in_(paper_ids)).delete(synchronize_session=False)
+        Paper.query.filter(Paper.id.in_(paper_ids)).delete(synchronize_session=False)
+        db.session.commit()
+    flash(f"All {len(paper_ids)} papers and their decisions have been removed.", "info")
+    return redirect(url_for("project_settings", pid=pid))
+
+
+@app.route("/project/<int:pid>/review/<stage>/reset", methods=["POST"])
+def reset_stage(pid, stage):
+    """Delete all review decisions for one stage."""
+    Project.query.get_or_404(pid)
+    if stage not in STAGES:
+        return redirect(url_for("project_dashboard", pid=pid))
+    paper_ids = [p.id for p in Paper.query.filter_by(project_id=pid).all()]
+    if paper_ids:
+        ReviewOrder.query.filter(
+            ReviewOrder.paper_id.in_(paper_ids),
+            ReviewOrder.stage == stage
+        ).delete(synchronize_session=False)
+        count = Review.query.filter(
+            Review.paper_id.in_(paper_ids),
+            Review.stage == stage
+        ).delete(synchronize_session=False)
+        db.session.commit()
+    else:
+        count = 0
+    label = STAGE_LABELS.get(stage, stage)
+    flash(f"{label} reset — {count} decision(s) removed.", "info")
+    return redirect(url_for("project_dashboard", pid=pid))
+
+
 @app.route("/project/<int:pid>")
 def project_home(pid):
     """Landing page — choose Lead Reviewer dashboard or Assignment Workspace."""

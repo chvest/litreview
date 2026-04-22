@@ -87,8 +87,60 @@
       </div>
 
     </form>
+
+    <!-- Danger zone -->
+    <div class="card border-danger mt-5">
+      <div class="card-header bg-danger bg-opacity-10 text-danger">
+        <h6 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</h6>
+      </div>
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+          <div>
+            <div class="fw-semibold">Remove all papers</div>
+            <div class="small text-muted">
+              Permanently deletes all imported papers and every review decision recorded
+              against them. Project settings and criteria are kept.
+            </div>
+          </div>
+          <button type="button" class="btn btn-outline-danger btn-sm flex-shrink-0"
+                  data-bs-toggle="modal" data-bs-target="#deletePapersModal">
+            <i class="bi bi-trash me-1"></i>Remove all papers
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
+
+<!-- Confirm delete papers modal -->
+<div class="modal fade" id="deletePapersModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title text-danger">
+          <i class="bi bi-exclamation-triangle me-2"></i>Remove all papers?
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        This will permanently delete <strong>all imported papers</strong> and every review
+        decision recorded for this project. Project settings and criteria will be kept.
+        <br><br>
+        <strong>This cannot be undone.</strong>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form method="post" action="{{ url_for('delete_all_papers', pid=project.id) }}">
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-trash me-1"></i>Yes, delete everything
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}

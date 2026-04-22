@@ -178,6 +178,12 @@
              title="Group decisions for {{ info.label }}">
             <i class="bi bi-people-fill"></i>
           </a>
+          <button type="button"
+                  class="btn btn-sm btn-outline-danger"
+                  title="Reset all decisions for {{ info.label }}"
+                  onclick="confirmReset('{{ stage }}', '{{ info.label }}', {{ info.reviewed }})">
+            <i class="bi bi-arrow-counterclockwise"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -248,4 +254,44 @@
     </div>
   </div>
 </div>
+
+<!-- Reset stage confirmation modal -->
+<div class="modal fade" id="resetStageModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title text-danger">
+          <i class="bi bi-arrow-counterclockwise me-2"></i>Reset <span id="resetStageLabel"></span>?
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="resetStageBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form id="resetStageForm" method="post">
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Yes, reset
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmReset(stage, label, count) {
+  document.getElementById('resetStageLabel').textContent = label;
+  document.getElementById('resetStageBody').innerHTML =
+    'This will permanently delete <strong>' + count + ' decision' + (count !== 1 ? 's' : '') +
+    '</strong> recorded for <strong>' + label + '</strong>.<br><br>' +
+    'Papers themselves are kept — only the review decisions for this stage are removed. ' +
+    'This cannot be undone.';
+  document.getElementById('resetStageForm').action =
+    '{{ url_for("reset_stage", pid=project.id, stage="STAGE") }}'.replace('STAGE', stage);
+  new bootstrap.Modal(document.getElementById('resetStageModal')).show();
+}
+</script>
 {% endblock %}
