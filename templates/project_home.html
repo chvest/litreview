@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="mb-5 text-center">
+  <h2 class="mb-1">{{ project.name }}</h2>
+  {% if project.description %}
+  <p class="text-muted mb-0">{{ project.description }}</p>
+  {% endif %}
+  {% if total %}
+  <div class="text-muted small mt-1"><i class="bi bi-files me-1"></i>{{ total }} paper{{ 's' if total != 1 }}</div>
+  {% endif %}
+</div>
+
+<div class="row g-4 justify-content-center">
+
+  <div class="col-md-5">
+    <div class="card h-100 border-primary shadow-sm">
+      <div class="card-body d-flex flex-column p-4">
+        <div class="mb-3">
+          <i class="bi bi-clipboard2-data" style="font-size:2.8rem; color:var(--bs-primary)"></i>
+        </div>
+        <h4 class="mb-2">Lead Reviewer</h4>
+        <p class="text-muted flex-grow-1">
+          Manage the full review: import papers, configure criteria, run pilot batches,
+          generate and manage assignments, view statistics and inter-rater agreement.
+        </p>
+        <a href="{{ url_for('project_dashboard', pid=project.id) }}" class="btn btn-primary">
+          <i class="bi bi-grid-3x3-gap me-1"></i>Open Dashboard
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-5">
+    <div class="card h-100 border-success shadow-sm">
+      <div class="card-body d-flex flex-column p-4">
+        <div class="mb-3">
+          <i class="bi bi-person-check" style="font-size:2.8rem; color:var(--bs-success)"></i>
+        </div>
+        <h4 class="mb-2">Assignment Reviewer</h4>
+        <p class="text-muted flex-grow-1">
+          Received an assignment file? Import it, screen your papers, and export
+          your decisions to send back to the lead reviewer.
+        </p>
+        <a href="{{ url_for('assignment_workspace', pid=project.id) }}" class="btn btn-success">
+          <i class="bi bi-arrow-right-circle me-1"></i>Open Workspace
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

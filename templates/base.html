@@ -27,6 +27,24 @@
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
+
+      {% if request.endpoint == 'assignment_workspace' %}
+      <!-- Simplified navbar for assignment reviewers -->
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link active" href="{{ url_for('assignment_workspace', pid=project.id) }}">
+            <i class="bi bi-person-check me-1"></i>Workspace
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="{{ url_for('import_assignment_papers', pid=project.id) }}">
+            <i class="bi bi-upload me-1"></i>Import Assignment
+          </a>
+        </li>
+      </ul>
+
+      {% else %}
+      <!-- Full navbar for lead reviewers -->
       <ul class="navbar-nav me-auto">
         <li class="nav-item">
           <a class="nav-link{% if request.endpoint == 'project_dashboard' %} active{% endif %}"
@@ -35,7 +53,7 @@
           </a>
         </li>
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle{% if 'review' in (request.endpoint or '') or 'decisions' in (request.endpoint or '') or request.endpoint == 'assignment_workspace' %} active{% endif %}"
+          <a class="nav-link dropdown-toggle{% if 'review' in (request.endpoint or '') or 'decisions' in (request.endpoint or '') %} active{% endif %}"
              href="#" role="button" data-bs-toggle="dropdown">
             <i class="bi bi-check2-square me-1"></i>Review
           </a>
@@ -44,12 +62,6 @@
             <li><a class="dropdown-item" href="{{ url_for('review_start', pid=project.id, stage='title') }}">Title Review</a></li>
             <li><a class="dropdown-item" href="{{ url_for('review_start', pid=project.id, stage='abstract') }}">Abstract Review</a></li>
             <li><a class="dropdown-item" href="{{ url_for('review_start', pid=project.id, stage='fulltext') }}">Full-Text Review</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">Assignment</h6></li>
-            <li><a class="dropdown-item{% if request.endpoint == 'assignment_workspace' %} active{% endif %}"
-                   href="{{ url_for('assignment_workspace', pid=project.id) }}">
-              <i class="bi bi-person-check me-2"></i>Assignment Workspace
-            </a></li>
             <li><hr class="dropdown-divider"></li>
             <li><h6 class="dropdown-header">Group decisions</h6></li>
             <li><a class="dropdown-item" href="{{ url_for('decisions_overview', pid=project.id, stage='title') }}">
@@ -108,7 +120,12 @@
           </a>
         </li>
       </ul>
-      <span class="navbar-text text-white-50 small me-3">{{ project.name }}</span>
+      {% endif %}
+
+      <a href="{{ url_for('project_home', pid=project.id) }}"
+         class="navbar-text text-white-50 small me-3 text-decoration-none">
+        {{ project.name }}
+      </a>
     </div>
     {% endif %}
     <!-- Theme toggle — always visible -->

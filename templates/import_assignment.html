@@ -6,7 +6,7 @@
   <div class="col-lg-7">
     <nav aria-label="breadcrumb" class="mb-3">
       <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('assignment_workspace', pid=project.id) }}">{{ project.name }}</a></li>
         <li class="breadcrumb-item active">Import Assignment</li>
       </ol>
     </nav>
@@ -32,7 +32,7 @@
             <button type="submit" class="btn btn-primary">
               <i class="bi bi-upload me-1"></i>Import Papers
             </button>
-            <a href="{{ url_for('project_dashboard', pid=project.id) }}" class="btn btn-outline-secondary">Cancel</a>
+            <a href="{{ url_for('assignment_workspace', pid=project.id) }}" class="btn btn-outline-secondary">Cancel</a>
           </div>
         </form>
       </div>

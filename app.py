@@ -484,6 +484,14 @@ def project_settings(pid):
 
 
 @app.route("/project/<int:pid>")
+def project_home(pid):
+    """Landing page — choose Lead Reviewer dashboard or Assignment Workspace."""
+    project = Project.query.get_or_404(pid)
+    total   = Paper.query.filter_by(project_id=pid).count()
+    return render_template("project_home.html", project=project, total=total)
+
+
+@app.route("/project/<int:pid>/dashboard")
 def project_dashboard(pid):
     project = Project.query.get_or_404(pid)
     total = Paper.query.filter_by(project_id=pid).count()
