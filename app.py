@@ -174,7 +174,8 @@ def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None):
         pilot = get_active_pilot(project_id, stage)
         if pilot:
             pilot_ids = {pp.paper_id for pp in pilot.papers}
-            eligible = [p for p in eligible if p.id in pilot_ids]
+            if pilot_ids:  # skip filter if pilot is empty / all papers were removed
+                eligible = [p for p in eligible if p.id in pilot_ids]
     return eligible
 
 
@@ -493,6 +494,10 @@ def delete_all_papers(pid):
         PilotPaper.query.filter(PilotPaper.paper_id.in_(paper_ids)).delete(synchronize_session=False)
         Review.query.filter(Review.paper_id.in_(paper_ids)).delete(synchronize_session=False)
         Paper.query.filter(Paper.id.in_(paper_ids)).delete(synchronize_session=False)
+        # Remove pilot batches that now have no papers
+        for batch in PilotBatch.query.filter_by(project_id=pid).all():
+            if not batch.papers:
+                db.session.delete(batch)
         db.session.commit()
     flash(f"All {len(paper_ids)} papers and their decisions have been removed.", "info")
     return redirect(url_for("project_settings", pid=pid))
@@ -855,6 +860,10 @@ def assignment_workspace(pid):
                 PilotPaper.query.filter(PilotPaper.paper_id.in_(paper_ids)).delete(synchronize_session=False)
                 Review.query.filter(Review.paper_id.in_(paper_ids)).delete(synchronize_session=False)
                 Paper.query.filter(Paper.id.in_(paper_ids)).delete(synchronize_session=False)
+                # Remove pilot batches that now have no papers
+                for batch in PilotBatch.query.filter_by(project_id=pid).all():
+                    if not batch.papers:
+                        db.session.delete(batch)
                 db.session.commit()
             flash("All imported papers and decisions have been removed.", "info")
             return redirect(url_for("assignment_workspace", pid=pid))
