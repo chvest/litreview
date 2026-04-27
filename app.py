@@ -439,6 +439,136 @@ def index():
     return render_template("index.html", projects=projects)
 
 
+@app.route("/project/import-full", methods=["POST"])
+def import_project_full():
+    """Recreate a project from a full JSON export file."""
+    import json as _json
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("No file selected.", "danger")
+        return redirect(url_for("index"))
+    try:
+        data = _json.loads(f.read().decode("utf-8"))
+    except Exception as e:
+        flash(f"Could not parse file: {e}", "danger")
+        return redirect(url_for("index"))
+
+    if data.get("litreview_version") != 1:
+        flash("Unrecognised file format or version.", "danger")
+        return redirect(url_for("index"))
+
+    pdata = data.get("project", {})
+    name = pdata.get("name", "Imported Project").strip()
+    # Avoid name collision
+    if Project.query.filter_by(name=name).first():
+        name = name + " (imported)"
+
+    project = Project(
+        name=name,
+        description=pdata.get("description", ""),
+        threshold=pdata.get("threshold", "any"),
+    )
+    db.session.add(project)
+    db.session.flush()  # get project.id
+
+    # ── Criteria ──────────────────────────────────────────────────────────────
+    # Map (type, code) → new Criterion id for review remapping
+    criterion_code_map = {}  # (type, code) -> new id
+    for cdata in data.get("criteria", []):
+        ctype = cdata.get("type", "").lower()
+        code  = (cdata.get("code") or "").strip()
+        desc  = (cdata.get("description") or "").strip()
+        if ctype not in ("inclusion", "exclusion") or not desc:
+            continue
+        c = Criterion(project_id=project.id, type=ctype, code=code,
+                      description=desc,
+                      sort_order=int(cdata.get("sort_order", 0)))
+        db.session.add(c)
+        db.session.flush()
+        if code:
+            criterion_code_map[(ctype, code)] = c.id
+
+    # ── Reviewers ─────────────────────────────────────────────────────────────
+    reviewer_name_map = {}  # name -> new id
+    for rdata in data.get("reviewers", []):
+        rname = (rdata.get("name") or "").strip()
+        if not rname or rname in reviewer_name_map:
+            continue
+        r = Reviewer(project_id=project.id, name=rname)
+        db.session.add(r)
+        db.session.flush()
+        reviewer_name_map[rname] = r.id
+
+    # ── Papers ────────────────────────────────────────────────────────────────
+    paper_eid_map = {}  # export _eid -> new paper id
+    for pdata in data.get("papers", []):
+        eid = pdata.get("_eid")
+        paper = Paper(
+            project_id  = project.id,
+            title       = pdata.get("title") or "",
+            authors     = pdata.get("authors") or "",
+            abstract    = pdata.get("abstract") or "",
+            year        = pdata.get("year") or None,
+            doi         = pdata.get("doi") or "",
+            source      = pdata.get("source") or "",
+            source_type = pdata.get("source_type") or "search",
+        )
+        db.session.add(paper)
+        db.session.flush()
+        if eid is not None:
+            paper_eid_map[eid] = paper.id
+
+    # ── Reviews ───────────────────────────────────────────────────────────────
+    reviews_added = 0
+    for rev in data.get("reviews", []):
+        paper_id    = paper_eid_map.get(rev.get("paper_eid"))
+        reviewer_id = reviewer_name_map.get(rev.get("reviewer"))
+        stage       = rev.get("stage")
+        decision    = rev.get("decision")
+        if not all([paper_id, reviewer_id, stage, decision]):
+            continue
+        # Remap exclusion criteria codes → new IDs
+        exc_codes = rev.get("exclusion_criteria") or []
+        new_exc_ids = []
+        for code in exc_codes:
+            new_id = criterion_code_map.get(("exclusion", code))
+            if new_id:
+                new_exc_ids.append(str(new_id))
+        exc_str = ",".join(new_exc_ids) if new_exc_ids else None
+        db.session.add(Review(
+            paper_id=paper_id, reviewer_id=reviewer_id,
+            stage=stage, decision=decision,
+            exclusion_criteria=exc_str,
+            notes=rev.get("notes") or None,
+        ))
+        reviews_added += 1
+
+    # ── Group decisions ────────────────────────────────────────────────────────
+    gd_added = 0
+    for gd in data.get("group_decisions", []):
+        paper_id = paper_eid_map.get(gd.get("paper_eid"))
+        stage    = gd.get("stage")
+        decision = gd.get("decision")
+        if not all([paper_id, stage, decision]):
+            continue
+        db.session.add(GroupDecision(
+            paper_id=paper_id, stage=stage, decision=decision,
+            notes=gd.get("notes") or None,
+        ))
+        gd_added += 1
+
+    db.session.commit()
+    flash(
+        f'Project "{name}" imported: '
+        f"{len(paper_eid_map)} papers, "
+        f"{reviews_added} reviews, "
+        f"{len(criterion_code_map)} criteria, "
+        f"{len(reviewer_name_map)} reviewers.",
+        "success",
+    )
+    return redirect(url_for("project_dashboard", pid=project.id))
+
+
 @app.route("/project/new", methods=["POST"])
 def new_project():
     name = request.form.get("name", "").strip()
@@ -493,6 +623,95 @@ def project_settings(pid):
                            threshold_mode=threshold_mode,
                            threshold_n=threshold_n,
                            THRESHOLD_LABELS=THRESHOLD_LABELS)
+
+
+@app.route("/project/<int:pid>/export-full")
+def export_project_full(pid):
+    """Export complete project (papers, decisions, criteria, reviewers) as JSON."""
+    import json as _json
+    project = Project.query.get_or_404(pid)
+
+    criteria = (Criterion.query.filter_by(project_id=pid)
+                .order_by(Criterion.type, Criterion.sort_order, Criterion.id).all())
+    reviewers = Reviewer.query.filter_by(project_id=pid).order_by(Reviewer.id).all()
+    papers = Paper.query.filter_by(project_id=pid).order_by(Paper.id).all()
+
+    # Build stable export-id map
+    paper_id_to_eid = {p.id: i + 1 for i, p in enumerate(papers)}
+
+    # Build criterion id → code map for review serialisation
+    criterion_id_to_code = {c.id: c.code for c in criteria if c.code}
+
+    reviews = (Review.query
+               .join(Paper).filter(Paper.project_id == pid)
+               .all())
+    group_decisions = (GroupDecision.query
+                       .join(Paper).filter(Paper.project_id == pid)
+                       .all())
+
+    data = {
+        "litreview_version": 1,
+        "exported_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "project": {
+            "name": project.name,
+            "description": project.description or "",
+            "threshold": project.threshold,
+        },
+        "criteria": [
+            {
+                "type": c.type,
+                "code": c.code or "",
+                "description": c.description,
+                "sort_order": c.sort_order,
+            }
+            for c in criteria
+        ],
+        "reviewers": [{"name": r.name} for r in reviewers],
+        "papers": [
+            {
+                "_eid":        paper_id_to_eid[p.id],
+                "title":       p.title or "",
+                "authors":     p.authors or "",
+                "abstract":    p.abstract or "",
+                "year":        p.year,
+                "doi":         p.doi or "",
+                "source":      p.source or "",
+                "source_type": p.source_type,
+            }
+            for p in papers
+        ],
+        "reviews": [
+            {
+                "paper_eid":          paper_id_to_eid[rev.paper_id],
+                "reviewer":           rev.reviewer.name,
+                "stage":              rev.stage,
+                "decision":           rev.decision,
+                "exclusion_criteria": [
+                    criterion_id_to_code[int(cid)]
+                    for cid in (rev.exclusion_criteria or "").split(",")
+                    if cid.strip() and int(cid) in criterion_id_to_code
+                ],
+                "notes": rev.notes or "",
+            }
+            for rev in reviews
+        ],
+        "group_decisions": [
+            {
+                "paper_eid": paper_id_to_eid[gd.paper_id],
+                "stage":     gd.stage,
+                "decision":  gd.decision,
+                "notes":     gd.notes or "",
+            }
+            for gd in group_decisions
+        ],
+    }
+
+    safe_name = "".join(c for c in project.name if c.isalnum() or c in " _-")[:40].strip()
+    filename = f"{safe_name}_export.json"
+    response = make_response(_json.dumps(data, indent=2, ensure_ascii=False))
+    response.headers["Content-Type"] = "application/json"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @app.route("/project/<int:pid>/delete-papers", methods=["POST"])
