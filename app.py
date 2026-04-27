@@ -1152,6 +1152,39 @@ def manage_criteria(pid):
                            inclusion=inclusion, exclusion=exclusion)
 
 
+@app.route("/project/<int:pid>/criteria/export")
+def export_criteria(pid):
+    project = Project.query.get_or_404(pid)
+    fmt = request.args.get("fmt", "csv").lower()
+    criteria = (Criterion.query
+                .filter_by(project_id=pid)
+                .order_by(Criterion.type, Criterion.sort_order, Criterion.id)
+                .all())
+    safe_name = "".join(c for c in project.name if c.isalnum() or c in " _-")[:40].strip()
+
+    if fmt == "json":
+        import json as _json
+        data = [{"type": c.type, "code": c.code or "", "description": c.description}
+                for c in criteria]
+        response = make_response(_json.dumps(data, indent=2, ensure_ascii=False))
+        response.headers["Content-Type"] = "application/json"
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="{safe_name}_criteria.json"')
+        return response
+    else:  # csv
+        import csv as _csv, io
+        buf = io.StringIO()
+        writer = _csv.writer(buf)
+        writer.writerow(["type", "code", "description"])
+        for c in criteria:
+            writer.writerow([c.type, c.code or "", c.description])
+        response = make_response(buf.getvalue())
+        response.headers["Content-Type"] = "text/csv; charset=utf-8"
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="{safe_name}_criteria.csv"')
+        return response
+
+
 @app.route("/project/<int:pid>/criteria/<int:cid>/delete", methods=["POST"])
 def delete_criterion(pid, cid):
     c = Criterion.query.get_or_404(cid)
