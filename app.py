@@ -2304,10 +2304,12 @@ def export_reviews_combined(pid):
 
 @app.route("/project/<int:pid>/export/notes")
 def export_notes(pid):
-    """Export all reviewer notes as an xlsx, one row per (paper, reviewer, stage)."""
+    """Export reviewer notes as xlsx. Optional ?reviewer_id= to filter to one reviewer."""
     project = Project.query.get_or_404(pid)
+    reviewer_id = request.args.get("reviewer_id", type=int)
+    reviewer_obj = Reviewer.query.get(reviewer_id) if reviewer_id else None
 
-    rows = (
+    q = (
         db.session.query(Review, Paper, Reviewer)
         .join(Paper,    Review.paper_id    == Paper.id)
         .join(Reviewer, Review.reviewer_id == Reviewer.id)
@@ -2316,13 +2318,16 @@ def export_notes(pid):
             Review.notes != None,
             Review.notes != "",
         )
-        .order_by(Review.stage, Paper.id, Reviewer.name)
-        .all()
     )
+    if reviewer_id:
+        q = q.filter(Review.reviewer_id == reviewer_id)
+    rows = q.order_by(Review.stage, Paper.id, Reviewer.name).all()
 
+    redirect_target = url_for("assignment_workspace", pid=pid) if reviewer_id \
+                      else url_for("project_dashboard", pid=pid)
     if not rows:
-        flash("No notes found in this project.", "warning")
-        return redirect(url_for("project_dashboard", pid=pid))
+        flash("No notes found.", "warning")
+        return redirect(redirect_target)
 
     STAGE_ORDER = {"title": 1, "abstract": 2, "fulltext": 3}
     data = []
@@ -2341,7 +2346,12 @@ def export_notes(pid):
 
     df = pd.DataFrame(data)
     safe_name = "".join(c for c in project.name if c.isalnum() or c in " _-")[:40].strip()
-    out = os.path.join(app.config["UPLOAD_FOLDER"], f"notes_{pid}.xlsx")
+    if reviewer_obj:
+        safe_reviewer = "".join(c for c in reviewer_obj.name if c.isalnum() or c in " _-")[:30].strip()
+        download_name = f"{safe_name}_{safe_reviewer}_notes.xlsx"
+    else:
+        download_name = f"{safe_name}_notes.xlsx"
+    out = os.path.join(app.config["UPLOAD_FOLDER"], f"notes_{pid}_{reviewer_id or 'all'}.xlsx")
 
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Notes")
@@ -2357,8 +2367,7 @@ def export_notes(pid):
             else:
                 ws.column_dimensions[col_letter].width = 18
 
-    return send_file(out, as_attachment=True,
-                     download_name=f"{safe_name}_notes.xlsx")
+    return send_file(out, as_attachment=True, download_name=download_name)
 
 
 # ── Generate assignment export ────────────────────────────────────────────────

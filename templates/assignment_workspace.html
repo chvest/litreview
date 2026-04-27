@@ -13,6 +13,11 @@
        class="btn btn-success">
       <i class="bi bi-download me-1"></i>Export all my decisions
     </a>
+    <a href="{{ url_for('export_notes', pid=project.id, reviewer_id=reviewer.id) }}"
+       class="btn btn-outline-success"
+       title="Export papers where you left a note">
+      <i class="bi bi-chat-left-text me-1"></i>Export my notes
+    </a>
     {% endif %}
     <a href="{{ url_for('import_assignment_papers', pid=project.id) }}"
        class="btn btn-outline-primary">
