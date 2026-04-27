@@ -13,8 +13,11 @@
     </nav>
 
     <div class="card mb-4">
-      <div class="card-header bg-white">
+      <div class="card-header bg-white d-flex align-items-center gap-2">
         <h5 class="mb-0"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Map File Columns</h5>
+        {% if source_type == 'snowball' %}
+        <span class="badge bg-info ms-1"><i class="bi bi-diagram-3 me-1"></i>Snowball import</span>
+        {% endif %}
       </div>
       <div class="card-body">
         <p class="text-muted">Match each field to a column in your file. Only <strong>Title</strong> or <strong>DOI</strong> is required.</p>

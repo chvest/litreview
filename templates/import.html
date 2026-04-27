@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Import Papers — {{ project.name }}{% endblock %}
+{% block title %}{% if source_type == 'snowball' %}Import Snowballed Papers{% else %}Import Papers{% endif %} — {{ project.name }}{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -7,20 +7,45 @@
     <nav aria-label="breadcrumb" class="mb-3">
       <ol class="breadcrumb">
         <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
-        <li class="breadcrumb-item active">Import Papers</li>
+        <li class="breadcrumb-item active">
+          {% if source_type == 'snowball' %}Import Snowballed Papers{% else %}Import Papers{% endif %}
+        </li>
       </ol>
     </nav>
 
+    {% if source_type == 'snowball' %}
+    <div class="alert alert-info d-flex gap-2 mb-3">
+      <i class="bi bi-diagram-3 flex-shrink-0 mt-1"></i>
+      <div>
+        <strong>Snowball import</strong> — these papers will be marked as snowballed and enter the
+        review at the <strong>abstract stage</strong>, skipping title screening.
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card">
       <div class="card-header bg-white">
-        <h5 class="mb-0"><i class="bi bi-upload me-2 text-primary"></i>Import Papers from File</h5>
+        <h5 class="mb-0">
+          {% if source_type == 'snowball' %}
+          <i class="bi bi-diagram-3 me-2 text-info"></i>Import Snowballed Papers
+          {% else %}
+          <i class="bi bi-upload me-2 text-primary"></i>Import Papers from File
+          {% endif %}
+        </h5>
       </div>
       <div class="card-body">
+        {% if source_type == 'snowball' %}
+        <p class="text-muted">
+          Upload a file containing snowballed papers — references identified from the included papers
+          in your original search. You will map column names in the next step.
+        </p>
+        {% else %}
         <p class="text-muted">
           Upload a <strong>CSV</strong> or <strong>Excel (.xlsx)</strong> file exported from a database
           such as PubMed, Scopus, Web of Science, or any search tool.
           You will map column names in the next step.
         </p>
+        {% endif %}
 
         <form method="post" enctype="multipart/form-data">
           <div class="mb-4">
@@ -43,8 +68,13 @@
         <h6><i class="bi bi-info-circle me-2 text-info"></i>Tips</h6>
         <ul class="small text-muted mb-0">
           <li>Duplicate papers (same DOI or title) are automatically skipped.</li>
+          {% if source_type == 'snowball' %}
+          <li>Snowballed papers go directly to abstract review — no title screening needed.</li>
+          <li>They are tracked separately in statistics and the PRISMA diagram.</li>
+          {% else %}
           <li>You can import from multiple sources — all papers go into the same project.</li>
           <li>Keep a <em>source</em> column if you want to track which database each paper came from.</li>
+          {% endif %}
         </ul>
       </div>
     </div>

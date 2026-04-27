@@ -20,6 +20,12 @@
         </a>
       </li>
       <li>
+        <a class="dropdown-item" href="{{ url_for('import_papers', pid=project.id, source_type='snowball') }}">
+          <i class="bi bi-diagram-3 me-2"></i>Import Snowballed Papers
+          <span class="text-muted small d-block" style="margin-top:-.15rem">References of included papers (skips title review)</span>
+        </a>
+      </li>
+      <li>
         <a class="dropdown-item" href="{{ url_for('import_assignment_papers', pid=project.id) }}">
           <i class="bi bi-person-check me-2"></i>Import Assignment
           <span class="text-muted small d-block" style="margin-top:-.15rem">Received an assignment file from a lead reviewer</span>

@@ -49,6 +49,7 @@ class Paper(db.Model):
     year = db.Column(db.Integer)
     doi = db.Column(db.String(300))
     source = db.Column(db.String(200))
+    source_type = db.Column(db.String(20), default='search', server_default='search', nullable=False)
     reviews = db.relationship("Review", backref="paper", lazy=True, cascade="all, delete-orphan")
     order_entries = db.relationship("ReviewOrder", backref="paper", lazy=True, cascade="all, delete-orphan")
 
@@ -161,12 +162,22 @@ def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None):
 
     all_papers = Paper.query.filter_by(project_id=project_id).all()
     if stage == "title":
-        eligible = all_papers
-    else:
-        prev_stage = "title" if stage == "abstract" else "abstract"
+        # Snowball papers skip title review — only original search papers are screened here
+        eligible = [p for p in all_papers if p.source_type != 'snowball']
+    elif stage == "abstract":
+        # Snowball papers enter at abstract stage; search papers must have passed title
         eligible = []
         for paper in all_papers:
-            prev_reviews = Review.query.filter_by(paper_id=paper.id, stage=prev_stage).all()
+            if paper.source_type == 'snowball':
+                eligible.append(paper)
+            else:
+                prev_reviews = Review.query.filter_by(paper_id=paper.id, stage='title').all()
+                if passes_threshold(prev_reviews, threshold):
+                    eligible.append(paper)
+    else:  # fulltext
+        eligible = []
+        for paper in all_papers:
+            prev_reviews = Review.query.filter_by(paper_id=paper.id, stage='abstract').all()
             if passes_threshold(prev_reviews, threshold):
                 eligible.append(paper)
 
@@ -583,6 +594,9 @@ def project_dashboard(pid):
 @app.route("/project/<int:pid>/import", methods=["GET", "POST"])
 def import_papers(pid):
     project = Project.query.get_or_404(pid)
+    source_type = request.args.get("source_type", "search")
+    if source_type not in ("search", "snowball"):
+        source_type = "search"
     if request.method == "POST":
         f = request.files.get("file")
         if not f or f.filename == "":
@@ -597,11 +611,10 @@ def import_papers(pid):
             flash(f"Error reading file: {e}", "danger")
             return redirect(request.url)
 
-        # Store only the filepath — columns and preview are re-read from disk
-        # on the next step to avoid overflowing the 4KB session cookie limit.
         session["import_file"] = filepath
+        session["import_source_type"] = source_type
         return redirect(url_for("import_columns", pid=pid))
-    return render_template("import.html", project=project)
+    return render_template("import.html", project=project, source_type=source_type)
 
 
 @app.route("/project/<int:pid>/import/columns", methods=["GET", "POST"])
@@ -610,7 +623,8 @@ def import_columns(pid):
     if "import_file" not in session:
         return redirect(url_for("import_papers", pid=pid))
 
-    filepath = session["import_file"]
+    filepath    = session["import_file"]
+    source_type = session.get("import_source_type", "search")
     try:
         df_preview = read_upload_file(filepath)
     except Exception as e:
@@ -680,7 +694,8 @@ def import_columns(pid):
                                  abstract=col("abstract") or None,
                                  year=year,
                                  doi=doi or None,
-                                 source=col("source") or None))
+                                 source=col("source") or None,
+                                 source_type=source_type))
             if ndoi:
                 existing_dois.add(ndoi)
             if ntitle:
@@ -690,7 +705,7 @@ def import_columns(pid):
             imported += 1
 
         db.session.commit()
-        for key in ("import_file", "import_columns", "import_preview"):
+        for key in ("import_file", "import_columns", "import_preview", "import_source_type"):
             session.pop(key, None)
 
         msg = f"Imported {imported} paper(s). Skipped {skipped} (duplicates or empty rows)."
@@ -701,7 +716,7 @@ def import_columns(pid):
 
     return render_template("column_map.html", project=project,
                            columns=columns, preview=preview,
-                           suggested=suggested)
+                           suggested=suggested, source_type=source_type)
 
 
 # ── Import assignment (papers from a LitReview assignment file) ───────────────
@@ -1593,36 +1608,34 @@ def statistics(pid):
         uncertain_papers[s] = ups
 
     # --- PRISMA numbers ---
-    # Per-stage: imported → title eligible → title included → abstract eligible → …
+    search_count   = Paper.query.filter_by(project_id=pid, source_type='search').count()
+    snowball_count = Paper.query.filter_by(project_id=pid, source_type='snowball').count()
+
     prisma = {
-        "imported": total,
+        "imported":         search_count,
+        "snowball_count":   snowball_count,
         "duplicates_removed": 0,   # not tracked yet
         "stages": {}
     }
-    for i, s in enumerate(STAGES):
+    for s in STAGES:
         eligible_papers = get_eligible_papers(pid, s, ignore_pilot=True)
+        n_eligible = n_included = n_excluded = n_uncertain = 0
         n_eligible = len(eligible_papers)
-        n_included = 0
-        n_excluded = 0
-        n_uncertain = 0
         for p in eligible_papers:
             revs = Review.query.filter_by(paper_id=p.id, stage=s).all()
             gd = GroupDecision.query.filter_by(paper_id=p.id, stage=s).first()
             effective = gd.decision if gd else (
                 compute_consensus([r.decision for r in revs]) if revs else None
             )
-            if effective == "include":
-                n_included += 1
-            elif effective == "exclude":
-                n_excluded += 1
-            elif effective == "uncertain":
-                n_uncertain += 1
+            if effective == "include":    n_included  += 1
+            elif effective == "exclude":  n_excluded  += 1
+            elif effective == "uncertain":n_uncertain += 1
         prisma["stages"][s] = {
-            "label": STAGE_LABELS[s],
+            "label":    STAGE_LABELS[s],
             "eligible": n_eligible,
             "included": n_included,
             "excluded": n_excluded,
-            "uncertain": n_uncertain,
+            "uncertain":n_uncertain,
         }
     prisma["final_included"] = final_included
 
@@ -2047,6 +2060,13 @@ with app.app_context():
     try:
         db.session.execute(text(
             "ALTER TABLE projects ADD COLUMN threshold VARCHAR(20) NOT NULL DEFAULT 'any'"
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    try:
+        db.session.execute(text(
+            "ALTER TABLE papers ADD COLUMN source_type VARCHAR(20) NOT NULL DEFAULT 'search'"
         ))
         db.session.commit()
     except Exception:

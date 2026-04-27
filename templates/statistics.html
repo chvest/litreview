@@ -350,6 +350,7 @@ const PRISMA_LABELS = {
     inclusion:      "Inclusion",
     via_databases:  "Identification via databases",
     records_identified: "Publications identified",
+    snowball_identified: "Snowballed publications",
     duplicates_removed: "Duplicates removed",
     titles_screened: "Titles screened",
     titles_excluded: "Titles excluded",
@@ -366,6 +367,7 @@ const PRISMA_LABELS = {
     inclusion:      "Inkludering",
     via_databases:  "Identifiering via databaser",
     records_identified: "Identifierade publikationer",
+    snowball_identified: "Snöbollsurval publikationer",
     duplicates_removed: "Borttagna dubbletter",
     titles_screened: "Titlar granskade",
     titles_excluded: "Titlar exkluderade",
@@ -387,7 +389,6 @@ function buildPrisma(lang) {
   const as = d.stages['abstract']|| {};
   const fs = d.stages['fulltext']|| {};
 
-  // Use eligible counts for screened boxes
   const titlesScreened   = ts.eligible || 0;
   const titlesExcluded   = ts.excluded  || 0;
   const abstractScreened = as.eligible  || 0;
@@ -396,30 +397,31 @@ function buildPrisma(lang) {
   const fulltextExcluded = fs.excluded  || 0;
   const finalIncluded    = d.final_included || 0;
   const imported         = d.imported || 0;
+  const snowballCount    = d.snowball_count || 0;
   const dupes            = d.duplicates_removed || 0;
+  const hasSnowball      = snowballCount > 0;
 
-  // Source lines
   const sourceLines = (d.sources || [])
     .map(([src, n]) => `${src} (${L.n}=${n})`)
     .join('\n') || `(${L.n}=${imported})`;
 
-  // SVG layout constants
-  const W = 860, H = 620;
-  const bw = 200, bh = 52;   // main box
-  const sw = 180, sh = 44;   // side (excluded) box
-  const lx = 60;             // left section label x
-  const col1 = 200;          // left column center x
-  const col2 = col1 + bw/2 + 60 + sw/2; // excluded box center
+  // SVG layout — wider when snowball path is shown
+  const W = hasSnowball ? 960 : 860;
+  const H = 620;
+  const bw = 200, bh = 52;
+  const sw = 175, sh = 44;
+  const lx = 60;
+  const col1 = hasSnowball ? 210 : 200;          // main flow column
+  const snowCol = hasSnowball ? col1 + 240 : 0;   // snowball id box column
+  const col2 = (hasSnowball ? snowCol : col1) + bw/2 + 55 + sw/2; // excluded boxes
   const sectionW = col1 + bw/2 + 10;
 
-  // Row y centers
   const y0 = 90;   // identification
-  const y1 = 220;  // title screening
-  const y2 = 340;  // abstract screening
+  const y1 = 220;  // title
+  const y2 = 340;  // abstract
   const y3 = 460;  // fulltext
   const y4 = 570;  // included
 
-  // Section label regions
   const sections = [
     { label: L.identification, y1: 50,  y2: 175, color: '#f3e8ff' },
     { label: L.screening,      y1: 175, y2: 410, color: '#fef9e7' },
@@ -429,13 +431,12 @@ function buildPrisma(lang) {
   function box(cx, cy, w, h, text, fill='#fff', stroke='#adb5bd', textColor='#212529') {
     const lines = text.split('\n');
     const lineH = 15;
-    const totalH = lines.length * lineH;
-    const startY = cy - totalH / 2 + lineH * 0.8;
+    const startY = cy - (lines.length * lineH) / 2 + lineH * 0.8;
     const textEls = lines.map((l, i) =>
       `<tspan x="${cx}" dy="${i === 0 ? 0 : lineH}">${escSvg(l)}</tspan>`
     ).join('');
     return `
-      <rect x="${cx - w/2}" y="${cy - h/2}" width="${w}" height="${h}"
+      <rect x="${cx-w/2}" y="${cy-h/2}" width="${w}" height="${h}"
             rx="6" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
       <text x="${cx}" y="${startY}" text-anchor="middle" font-size="11.5"
             fill="${textColor}" font-family="sans-serif">${textEls}</text>`;
@@ -452,20 +453,35 @@ function buildPrisma(lang) {
               fill="none" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arrowhead)"/>`;
   }
 
+  function elbowArrow(x1, y1, x2, y2) {
+    // L-shaped path: down then across, for snowball bypass
+    return `<polyline points="${x1},${y1} ${x1},${y2} ${x2},${y2}"
+              fill="none" stroke="#0d6efd" stroke-width="1.5" stroke-dasharray="5,3"
+              marker-end="url(#arrowhead-blue)"/>`;
+  }
+
   function escSvg(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  // Section backgrounds + rotated labels
-  let sectionSvg = sections.map(s => {
+  const sectionSvg = sections.map(s => {
     const mid = (s.y1 + s.y2) / 2;
     return `
-      <rect x="${lx}" y="${s.y1}" width="34" height="${s.y2 - s.y1}"
+      <rect x="${lx}" y="${s.y1}" width="34" height="${s.y2-s.y1}"
             rx="5" fill="${s.color}" stroke="#ced4da" stroke-width="1"/>
-      <text x="${lx + 17}" y="${mid}" text-anchor="middle" dominant-baseline="middle"
+      <text x="${lx+17}" y="${mid}" text-anchor="middle" dominant-baseline="middle"
             font-size="11" font-weight="600" fill="#495057" font-family="sans-serif"
             transform="rotate(-90 ${lx+17} ${mid})">${escSvg(s.label)}</text>`;
   }).join('');
+
+  const snowballSvg = hasSnowball ? `
+    <!-- Snowball identification box -->
+    ${box(snowCol, y0, bw, bh,
+      `${L.snowball_identified}\n(${L.n}=${snowballCount})`,
+      '#e8f4fd', '#0d6efd', '#084298')}
+    <!-- Dashed bypass arrow: snowball → abstract stage -->
+    ${elbowArrow(snowCol, y0 + bh/2, col1 + bw/2, y2)}
+  ` : '';
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"
     viewBox="0 0 ${W} ${H}" id="prisma-svg" style="font-family:sans-serif">
@@ -473,74 +489,63 @@ function buildPrisma(lang) {
     <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" fill="#6c757d"/>
     </marker>
+    <marker id="arrowhead-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#0d6efd"/>
+    </marker>
   </defs>
 
-  <!-- Section labels -->
   ${sectionSvg}
 
-  <!-- Header -->
   <text x="${W/2}" y="22" text-anchor="middle" font-size="15" font-weight="700"
         fill="#212529" font-family="sans-serif">PRISMA Flow Diagram</text>
-  <text x="${col1 + bw/2 - 30}" y="42" text-anchor="middle" font-size="11"
+  <text x="${col1}" y="42" text-anchor="middle" font-size="11"
         fill="#6c757d" font-family="sans-serif">${escSvg(L.via_databases)}</text>
 
-  <!-- Identification row: sources box -->
+  <!-- Search identification box -->
   ${box(col1, y0, bw, bh,
     `${L.records_identified}:\n${sourceLines}`,
     '#fff', '#adb5bd')}
 
-  <!-- Duplicates removed -->
+  <!-- Duplicates removed side box -->
   ${box(col2, y0, sw, sh,
     `${L.duplicates_removed}\n(${L.n}=${dupes})`,
     '#fff8f8', '#f5a0a8')}
   ${sideArrow(col1 + bw/2, y0, col2 - sw/2, y0)}
 
-  <!-- Arrow down to titles screened -->
+  ${snowballSvg}
+
   ${arrow(col1, y0 + bh/2, col1, y1 - bh/2)}
 
-  <!-- Titles screened -->
   ${box(col1, y1, bw, bh,
     `${L.titles_screened}\n(${L.n}=${titlesScreened})`,
     '#fff', '#adb5bd')}
-
-  <!-- Titles excluded -->
   ${box(col2, y1, sw, sh,
     `${L.titles_excluded}\n(${L.n}=${titlesExcluded})`,
     '#fff8f8', '#f5a0a8')}
   ${sideArrow(col1 + bw/2, y1, col2 - sw/2, y1)}
 
-  <!-- Arrow down to abstracts -->
   ${arrow(col1, y1 + bh/2, col1, y2 - bh/2)}
 
-  <!-- Abstracts screened -->
   ${box(col1, y2, bw, bh,
     `${L.abstracts_screened}\n(${L.n}=${abstractScreened})`,
     '#fff', '#adb5bd')}
-
-  <!-- Abstracts excluded -->
   ${box(col2, y2, sw, sh,
     `${L.abstracts_excluded}\n(${L.n}=${abstractExcluded})`,
     '#fff8f8', '#f5a0a8')}
   ${sideArrow(col1 + bw/2, y2, col2 - sw/2, y2)}
 
-  <!-- Arrow down to fulltext -->
   ${arrow(col1, y2 + bh/2, col1, y3 - bh/2)}
 
-  <!-- Full-text assessed -->
   ${box(col1, y3, bw, bh,
     `${L.fulltext_assessed}\n(${L.n}=${fulltextAssessed})`,
     '#fff', '#adb5bd')}
-
-  <!-- Full-text excluded -->
   ${box(col2, y3, sw, sh,
     `${L.fulltext_excluded}\n(${L.n}=${fulltextExcluded})`,
     '#fff8f8', '#f5a0a8')}
   ${sideArrow(col1 + bw/2, y3, col2 - sw/2, y3)}
 
-  <!-- Arrow down to included -->
   ${arrow(col1, y3 + bh/2, col1, y4 - bh/2)}
 
-  <!-- Studies included -->
   ${box(col1, y4, bw, bh,
     `${L.studies_included}\n(${L.n}=${finalIncluded})`,
     '#d4edda', '#198754', '#155724')}
