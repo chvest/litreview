@@ -1161,6 +1161,78 @@ def delete_criterion(pid, cid):
     return redirect(url_for("manage_criteria", pid=pid))
 
 
+@app.route("/project/<int:pid>/criteria/import", methods=["POST"])
+def import_criteria(pid):
+    project = Project.query.get_or_404(pid)
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("No file selected.", "danger")
+        return redirect(url_for("manage_criteria", pid=pid))
+
+    filename = f.filename.lower()
+    rows = []
+    try:
+        if filename.endswith(".json"):
+            import json as _json
+            data = _json.loads(f.read().decode("utf-8"))
+            if isinstance(data, list):
+                rows = data
+            else:
+                flash("JSON must be an array of objects.", "danger")
+                return redirect(url_for("manage_criteria", pid=pid))
+        elif filename.endswith(".csv"):
+            import csv as _csv, io
+            text = f.read().decode("utf-8-sig")  # handle BOM
+            reader = _csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+        else:
+            flash("Unsupported file type. Use .csv or .json.", "danger")
+            return redirect(url_for("manage_criteria", pid=pid))
+    except Exception as e:
+        flash(f"Could not parse file: {e}", "danger")
+        return redirect(url_for("manage_criteria", pid=pid))
+
+    added = skipped = errors = 0
+    for i, row in enumerate(rows, 1):
+        # Normalise keys (strip whitespace, lower-case)
+        row = {k.strip().lower(): str(v).strip() for k, v in row.items() if k}
+        ctype = row.get("type", "").lower()
+        description = row.get("description", "").strip()
+        code = row.get("code", "").strip()
+
+        if ctype not in ("inclusion", "exclusion"):
+            errors += 1
+            continue
+        if not description:
+            errors += 1
+            continue
+
+        # Skip duplicates — same project + type + description
+        exists = Criterion.query.filter_by(
+            project_id=pid, type=ctype, description=description).first()
+        if exists:
+            skipped += 1
+            continue
+
+        if not code:
+            prefix = "IC" if ctype == "inclusion" else "EC"
+            n = Criterion.query.filter_by(project_id=pid, type=ctype).count() + added
+            code = f"{prefix}{n + 1}"
+
+        db.session.add(Criterion(project_id=pid, type=ctype,
+                                 code=code, description=description))
+        added += 1
+
+    db.session.commit()
+    parts = [f"{added} criterion added" if added == 1 else f"{added} criteria added"]
+    if skipped:
+        parts.append(f"{skipped} duplicate{'s' if skipped > 1 else ''} skipped")
+    if errors:
+        parts.append(f"{errors} row{'s' if errors > 1 else ''} skipped (missing type/description)")
+    flash("; ".join(parts) + ".", "success" if added else "warning")
+    return redirect(url_for("manage_criteria", pid=pid))
+
+
 # ── Reviewers ─────────────────────────────────────────────────────────────────
 
 @app.route("/project/<int:pid>/reviewers", methods=["GET", "POST"])
