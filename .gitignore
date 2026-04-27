@@ -20,6 +20,12 @@ uploads/
 *.sqlite
 *.sqlite3
 
+# Data files (exports, imports — keep out of repo)
+*.csv
+*.xls
+*.xlsx
+*.json
+
 # OS
 .DS_Store
 Thumbs.db
