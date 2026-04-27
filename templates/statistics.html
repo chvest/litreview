@@ -407,24 +407,8 @@ function buildPrisma(lang) {
   const dupes            = d.duplicates_removed || 0;
   const hasSnowball      = snowballCount > 0;
 
-  const MAX_SRC_LINES = 4;
-  const MAX_SRC_CHARS = 26;
-  const rawSources = (d.sources || []).map(([src, n]) => {
-    const label = src.length > MAX_SRC_CHARS ? src.slice(0, MAX_SRC_CHARS - 1) + '…' : src;
-    return `${label} (${L.n}=${n})`;
-  });
-  let sourceLines;
-  if (rawSources.length === 0) {
-    sourceLines = `(${L.n}=${imported})`;
-  } else if (rawSources.length <= MAX_SRC_LINES) {
-    sourceLines = rawSources.join('\n');
-  } else {
-    const shown = rawSources.slice(0, MAX_SRC_LINES - 1);
-    shown.push(`+ ${rawSources.length - (MAX_SRC_LINES - 1)} more sources`);
-    sourceLines = shown.join('\n');
-  }
-  // Box height grows with number of source lines
-  const srcLineCount = sourceLines.split('\n').length;
+  const sourceLines = `(${L.n}=${imported})`;
+  const srcLineCount = 1;
 
   // SVG layout — wider when snowball path is shown
   const W = hasSnowball ? 960 : 860;
