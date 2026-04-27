@@ -66,6 +66,13 @@
         </a>
       </li>
       <li><hr class="dropdown-divider"></li>
+      <li>
+        <a class="dropdown-item" href="{{ url_for('export_notes', pid=project.id) }}">
+          <i class="bi bi-chat-left-text me-2"></i>All reviewer notes
+          <span class="text-muted small d-block" style="margin-top:-.15rem">Papers with notes, all stages</span>
+        </a>
+      </li>
+      <li><hr class="dropdown-divider"></li>
       <li><h6 class="dropdown-header">Combined reviewer decisions</h6></li>
       {% for stage in ['title','abstract','fulltext'] %}
       <li>

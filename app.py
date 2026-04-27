@@ -2302,6 +2302,65 @@ def export_reviews_combined(pid):
                      download_name=f"{project.name}_{stage}_combined_decisions.csv")
 
 
+@app.route("/project/<int:pid>/export/notes")
+def export_notes(pid):
+    """Export all reviewer notes as an xlsx, one row per (paper, reviewer, stage)."""
+    project = Project.query.get_or_404(pid)
+
+    rows = (
+        db.session.query(Review, Paper, Reviewer)
+        .join(Paper,    Review.paper_id    == Paper.id)
+        .join(Reviewer, Review.reviewer_id == Reviewer.id)
+        .filter(
+            Paper.project_id == pid,
+            Review.notes != None,
+            Review.notes != "",
+        )
+        .order_by(Review.stage, Paper.id, Reviewer.name)
+        .all()
+    )
+
+    if not rows:
+        flash("No notes found in this project.", "warning")
+        return redirect(url_for("project_dashboard", pid=pid))
+
+    STAGE_ORDER = {"title": 1, "abstract": 2, "fulltext": 3}
+    data = []
+    for rev, paper, reviewer in rows:
+        data.append({
+            "Stage":    STAGE_LABELS.get(rev.stage, rev.stage),
+            "Title":    paper.title   or "",
+            "Authors":  paper.authors or "",
+            "Year":     paper.year    or "",
+            "DOI":      paper.doi     or "",
+            "Source":   paper.source  or "",
+            "Reviewer": reviewer.name,
+            "Decision": rev.decision,
+            "Note":     rev.notes,
+        })
+
+    df = pd.DataFrame(data)
+    safe_name = "".join(c for c in project.name if c.isalnum() or c in " _-")[:40].strip()
+    out = os.path.join(app.config["UPLOAD_FOLDER"], f"notes_{pid}.xlsx")
+
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Notes")
+        ws = writer.sheets["Notes"]
+        # Widen Note and Title columns for readability
+        for col_cells in ws.iter_cols(min_row=1, max_row=1):
+            col_letter = col_cells[0].column_letter
+            header = col_cells[0].value or ""
+            if header in ("Note", "Title"):
+                ws.column_dimensions[col_letter].width = 60
+            elif header == "Authors":
+                ws.column_dimensions[col_letter].width = 30
+            else:
+                ws.column_dimensions[col_letter].width = 18
+
+    return send_file(out, as_attachment=True,
+                     download_name=f"{safe_name}_notes.xlsx")
+
+
 # ── Generate assignment export ────────────────────────────────────────────────
 
 @app.route("/project/<int:pid>/assign", methods=["GET", "POST"])
