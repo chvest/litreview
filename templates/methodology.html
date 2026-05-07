@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Methodology &amp; References — LitReview{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+
+    <h1 class="h3 mb-1"><i class="bi bi-book me-2 text-primary"></i>Methodology &amp; References</h1>
+    <p class="text-muted mb-4">Statistical methods and key publications underlying this tool.</p>
+
+    <!-- TOC -->
+    <div class="card mb-4">
+      <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-3 small">
+          <a href="#screening" class="text-decoration-none"><i class="bi bi-funnel me-1"></i>Screening process</a>
+          <a href="#agreement" class="text-decoration-none"><i class="bi bi-people me-1"></i>Agreement metrics</a>
+          <a href="#simple"   class="text-decoration-none">Simple agreement</a>
+          <a href="#kappa"    class="text-decoration-none">Cohen's κ</a>
+          <a href="#ac1"      class="text-decoration-none">Gwet's AC1</a>
+          <a href="#interp"   class="text-decoration-none">Interpretation scale</a>
+          <a href="#refs"     class="text-decoration-none"><i class="bi bi-journals me-1"></i>References</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screening process -->
+    <div class="card mb-4" id="screening">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-funnel me-2 text-primary"></i>Screening Process</h5>
+      </div>
+      <div class="card-body">
+        <p>
+          This tool implements a three-stage systematic literature screening workflow following
+          established guidelines for systematic reviews <a href="#ref-prisma">[1]</a>:
+        </p>
+        <ol>
+          <li class="mb-2">
+            <strong>Title screening</strong> — reviewers assess whether a paper's title (and available
+            metadata) indicates potential relevance. Papers not excluded here advance to abstract review.
+          </li>
+          <li class="mb-2">
+            <strong>Abstract screening</strong> — reviewers read the abstract and decide whether the paper
+            meets the inclusion criteria. Papers snowballed from reference lists enter the workflow here,
+            bypassing title screening.
+          </li>
+          <li class="mb-2">
+            <strong>Full-text review</strong> — reviewers assess the complete paper against all inclusion
+            and exclusion criteria and record a final decision.
+          </li>
+        </ol>
+        <p class="mb-0">
+          At each stage, papers are advanced to the next stage only when the configured
+          <strong>inclusion threshold</strong> is met (e.g., any non-excluded reviewer, majority, or all
+          reviewers). Uncertain decisions count as non-excluded and do not block advancement.
+        </p>
+      </div>
+    </div>
+
+    <!-- Agreement metrics -->
+    <div class="card mb-4" id="agreement">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-people me-2 text-primary"></i>Inter-Rater Agreement Metrics</h5>
+      </div>
+      <div class="card-body">
+        <p>
+          Agreement between reviewers is quantified using three complementary metrics.
+          All three are computed on the subset of papers reviewed by <em>both</em> reviewers in
+          the selected stage, using the three-category scale: <strong>include</strong>,
+          <strong>uncertain</strong>, <strong>exclude</strong>.
+        </p>
+
+        <!-- Simple agreement -->
+        <h6 class="mt-4 mb-2" id="simple">Simple Percent Agreement</h6>
+        <p>
+          The proportion of papers on which both reviewers gave identical decisions:
+        </p>
+        <div class="bg-light rounded p-3 mb-2 text-center" style="font-family:serif; font-size:1.1rem">
+          P<sub>o</sub> = (number of agreements) / (total papers reviewed by both)
+        </div>
+        <p class="text-muted small mb-0">
+          Simple and interpretable, but does not correct for the chance agreement that would occur
+          even if both reviewers chose randomly. Can therefore overstate the true level of
+          systematic agreement, particularly when one category dominates.
+        </p>
+
+        <!-- Cohen's kappa -->
+        <h6 class="mt-4 mb-2" id="kappa">Cohen's κ (Kappa)</h6>
+        <p>
+          Cohen's κ corrects simple agreement for the expected agreement under chance,
+          computed from each reviewer's individual marginal rates <a href="#ref-cohen">[2]</a>:
+        </p>
+        <div class="bg-light rounded p-3 mb-2 text-center" style="font-family:serif; font-size:1.1rem">
+          κ = (P<sub>o</sub> − P<sub>e</sub>) / (1 − P<sub>e</sub>)
+        </div>
+        <p>
+          where P<sub>e</sub> is the expected chance agreement calculated from the product of each
+          reviewer's marginal probabilities for each category.
+        </p>
+        <div class="alert alert-warning py-2 small mb-0">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          <strong>Prevalence problem.</strong> In systematic reviews, the vast majority of papers are
+          excluded. This creates a highly skewed label distribution. Cohen's κ computes P<sub>e</sub>
+          from each reviewer's individual marginal rates — when both reviewers exclude ~90% of papers,
+          the formula assigns most of their agreement to chance, driving κ artificially low even when
+          reviewers are highly consistent. Values can legitimately be <strong>negative</strong>
+          (meaning worse-than-chance agreement) or close to zero even when simple agreement exceeds
+          90%. For this reason, <strong>Gwet's AC1 is preferred</strong> for systematic reviews.
+        </div>
+
+        <!-- Gwet's AC1 -->
+        <h6 class="mt-4 mb-2" id="ac1">Gwet's AC1 <i class="bi bi-patch-check-fill text-primary" style="font-size:.9rem"></i></h6>
+        <p>
+          Gwet's AC1 addresses the prevalence problem by computing expected chance agreement from
+          <em>averaged</em> marginal probabilities rather than products of individual marginals
+          <a href="#ref-gwet">[3]</a>:
+        </p>
+        <div class="bg-light rounded p-3 mb-2 text-center" style="font-family:serif; font-size:1.05rem">
+          AC1 = (P<sub>o</sub> − P<sub>e</sub><sup>*</sup>) / (1 − P<sub>e</sub><sup>*</sup>)
+          &nbsp;&nbsp;where&nbsp;&nbsp;
+          P<sub>e</sub><sup>*</sup> = Σ<sub>k</sub> π̄<sub>k</sub>(1 − π̄<sub>k</sub>) / (K−1)
+        </div>
+        <p>
+          π̄<sub>k</sub> is the average marginal probability of category <em>k</em> across both
+          reviewers, and <em>K</em> is the number of categories (3 in this tool).
+          By using averaged rather than individual marginals, AC1 does not inflate expected agreement
+          when categories are imbalanced.
+        </p>
+        <p class="mb-0">
+          AC1 is recommended for systematic reviews by Wongpakaran et al.
+          <a href="#ref-wongpakaran">[4]</a>, and an AC1 ≥ 0.6 is generally considered
+          acceptable for proceeding to full-text review.
+        </p>
+
+        <!-- Interpretation scale -->
+        <h6 class="mt-4 mb-2" id="interp">Interpretation Scale</h6>
+        <p>
+          Both κ and AC1 are interpreted using the scale of Landis &amp; Koch (1977)
+          <a href="#ref-landis">[5]</a>, originally defined for κ and commonly applied to AC1:
+        </p>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered mb-0" style="max-width:420px">
+            <thead class="table-light">
+              <tr><th>Value</th><th>Interpretation</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>&lt; 0</td><td class="text-danger">Worse than chance</td></tr>
+              <tr><td>0.00–0.20</td><td>Slight</td></tr>
+              <tr><td>0.21–0.40</td><td>Fair</td></tr>
+              <tr><td>0.41–0.60</td><td class="text-warning">Moderate</td></tr>
+              <tr><td>0.61–0.80</td><td class="text-primary">Substantial</td></tr>
+              <tr><td>0.81–1.00</td><td class="text-success">Almost Perfect</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-muted small mt-2 mb-0">
+          Note: Landis &amp; Koch acknowledge these boundaries are arbitrary. McHugh (2012)
+          <a href="#ref-mchugh">[6]</a> provides an accessible overview of their practical use.
+        </p>
+      </div>
+    </div>
+
+    <!-- References -->
+    <div class="card mb-4" id="refs">
+      <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-journals me-2 text-primary"></i>References</h5>
+      </div>
+      <div class="card-body">
+        <ol class="mb-0" style="line-height:2">
+          <li id="ref-prisma">
+            Page, M. J., McKenzie, J. E., Bossuyt, P. M., Boutron, I., Hoffmann, T. C., Mulrow,
+            C. D., … Moher, D. (2021). The PRISMA 2020 statement: an updated guideline for
+            reporting systematic reviews. <em>BMJ</em>, 372, n71.
+            <a href="https://doi.org/10.1136/bmj.n71" target="_blank" class="ms-1">
+              <i class="bi bi-box-arrow-up-right"></i> doi:10.1136/bmj.n71
+            </a>
+          </li>
+          <li id="ref-cohen">
+            Cohen, J. (1960). A coefficient of agreement for nominal scales.
+            <em>Educational and Psychological Measurement</em>, 20(1), 37–46.
+            <a href="https://doi.org/10.1177/001316446002000104" target="_blank" class="ms-1">
+              <i class="bi bi-box-arrow-up-right"></i> doi:10.1177/001316446002000104
+            </a>
+          </li>
+          <li id="ref-gwet">
+            Gwet, K. L. (2008). Computing inter-rater reliability and its variance in the presence
+            of high agreement. <em>British Journal of Mathematical and Statistical Psychology</em>,
+            61(1), 29–48.
+            <a href="https://doi.org/10.1348/000711006X126600" target="_blank" class="ms-1">
+              <i class="bi bi-box-arrow-up-right"></i> doi:10.1348/000711006X126600
+            </a>
+          </li>
+          <li id="ref-wongpakaran">
+            Wongpakaran, N., Wongpakaran, T., Wedding, D., &amp; Gwet, K. L. (2013).
+            A comparison of Cohen's Kappa and Gwet's AC1 when calculating inter-rater reliability
+            coefficients: a study conducted with personality disorder samples.
+            <em>BMC Medical Research Methodology</em>, 13, 61.
+            <a href="https://doi.org/10.1186/1471-2288-13-61" target="_blank" class="ms-1">
+              <i class="bi bi-box-arrow-up-right"></i> doi:10.1186/1471-2288-13-61
+            </a>
+          </li>
+          <li id="ref-landis">
+            Landis, J. R., &amp; Koch, G. G. (1977). The measurement of observer agreement for
+            categorical data. <em>Biometrics</em>, 33(1), 159–174.
+            <a href="https://doi.org/10.2307/2529310" target="_blank" class="ms-1">
+              <i class="bi bi-box-arrow-up-right"></i> doi:10.2307/2529310
+            </a>
+          </li>
+          <li id="ref-mchugh">
+            McHugh, M. L. (2012). Interrater reliability: the kappa statistic.
+            <em>Biochemia Medica</em>, 22(3), 276–282.
+            <a href="https://doi.org/10.11613/BM.2012.031" target="_blank" class="ms-1">
+              <i class="bi bi-box-arrow-up-right"></i> doi:10.11613/BM.2012.031
+            </a>
+          </li>
+        </ol>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

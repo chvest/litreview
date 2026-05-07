@@ -443,6 +443,11 @@ def index():
     return render_template("index.html", projects=projects)
 
 
+@app.route("/methodology")
+def methodology():
+    return render_template("methodology.html")
+
+
 @app.route("/project/import-full", methods=["POST"])
 def import_project_full():
     """Recreate a project from a full JSON export file."""
