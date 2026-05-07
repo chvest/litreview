@@ -255,7 +255,7 @@ def stage_stats(reviewer_id, stage):
 
 def interpret_agreement(k):
     if k < 0:
-        return "Poor"
+        return "Worse than chance"
     if k < 0.20:
         return "Slight"
     if k < 0.40:

@@ -35,7 +35,7 @@
       <div class="card-body small p-2">
         <table class="table table-sm table-borderless mb-2">
           <tbody>
-            <tr><td>&lt; 0</td><td class="text-danger">Poor</td></tr>
+            <tr><td>&lt; 0</td><td class="text-danger">Worse than chance</td></tr>
             <tr><td>0.01–0.20</td><td>Slight</td></tr>
             <tr><td>0.21–0.40</td><td>Fair</td></tr>
             <tr><td>0.41–0.60</td><td class="text-warning">Moderate</td></tr>
@@ -192,7 +192,16 @@
           </div>
         </div>
 
-        {% if kappa_result.degenerate or (kappa_result.ac1 - kappa_result.kappa) > 0.2 %}
+        {% if kappa_result.ac1 < 0 or kappa_result.kappa < 0 %}
+        <div class="alert alert-warning py-2 small mt-3 mb-0">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          <strong>Negative agreement score.</strong>
+          Both κ and AC1 can range from −1 to +1. A negative value means the two reviewers
+          are disagreeing <em>more than random chance would predict</em> — typically because one
+          reviewer is systematically more inclusive while the other is more exclusive.
+          Review the conflict list below to identify the pattern.
+        </div>
+        {% elif kappa_result.degenerate or (kappa_result.ac1 - kappa_result.kappa) > 0.2 %}
         <div class="alert alert-info py-2 small mt-3 mb-0">
           <i class="bi bi-info-circle me-1"></i>
           <strong>Why does Cohen's κ look low?</strong>
