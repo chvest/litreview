@@ -78,6 +78,48 @@
         </div>
       </div>
 
+      <!-- Keywords & highlighting -->
+      <div class="card mb-4">
+        <div class="card-header bg-white">
+          <h6 class="mb-0"><i class="bi bi-highlighter me-2 text-primary"></i>Keywords &amp; Highlighting</h6>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">
+            Keywords are highlighted automatically in the abstract during review.
+            One phrase per line — matches are case-insensitive.
+          </p>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold text-success">
+                <i class="bi bi-plus-circle me-1"></i>Positive keywords
+              </label>
+              <textarea name="highlight_positive" class="form-control form-control-sm" rows="6"
+                        placeholder="machine learning&#10;randomized controlled trial&#10;systematic review"
+                        style="font-size:.85rem">{{ project.highlight_positive or '' }}</textarea>
+              <div class="form-text">Highlighted in <strong class="text-success">green</strong></div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold text-danger">
+                <i class="bi bi-dash-circle me-1"></i>Negative keywords
+              </label>
+              <textarea name="highlight_negative" class="form-control form-control-sm" rows="6"
+                        placeholder="case report&#10;animal study&#10;conference abstract"
+                        style="font-size:.85rem">{{ project.highlight_negative or '' }}</textarea>
+              <div class="form-text">Highlighted in <strong class="text-danger">red</strong></div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold text-muted">
+                <i class="bi bi-skip-forward me-1"></i>Skip phrases
+              </label>
+              <textarea name="highlight_skip" class="form-control form-control-sm" rows="6"
+                        placeholder="In this paper&#10;In this study&#10;This paper presents&#10;We propose&#10;The purpose of this"
+                        style="font-size:.85rem">{{ project.highlight_skip or '' }}</textarea>
+              <div class="form-text">Dimmed with strikethrough — easy to visually skip</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">
           <i class="bi bi-check-lg me-1"></i>Save Settings

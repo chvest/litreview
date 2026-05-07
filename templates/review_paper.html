@@ -111,19 +111,37 @@
         <div class="d-flex justify-content-between align-items-center mb-2">
           <span class="small fw-semibold text-muted text-uppercase" style="letter-spacing:.05em">Abstract</span>
           <div class="d-flex align-items-center gap-3">
-            {% if inclusion_criteria or exclusion_criteria %}
+            {% if inclusion_criteria or exclusion_criteria or kw_positive or kw_negative or kw_skip %}
             <!-- Highlight legend (shown when active) -->
             <span class="hl-legend" id="hl-legend" style="display:none !important">
+              {% if kw_positive %}
+              <span>
+                <span class="hl-legend-dot" style="background:rgba(25,135,84,.5); outline:1px solid rgba(25,135,84,.5)"></span>
+                Positive
+              </span>
+              {% endif %}
+              {% if kw_negative %}
+              <span>
+                <span class="hl-legend-dot" style="background:rgba(220,53,69,.45); outline:1px solid rgba(220,53,69,.5)"></span>
+                Negative
+              </span>
+              {% endif %}
+              {% if kw_skip %}
+              <span>
+                <span class="hl-legend-dot" style="background:#dee2e6"></span>
+                Skip phrase
+              </span>
+              {% endif %}
               {% if inclusion_criteria %}
               <span>
-                <span class="hl-legend-dot" style="background:rgba(25,135,84,.3)"></span>
-                Inclusion
+                <span class="hl-legend-dot" style="background:rgba(25,135,84,.2)"></span>
+                Incl. term
               </span>
               {% endif %}
               {% if exclusion_criteria %}
               <span>
-                <span class="hl-legend-dot" style="background:rgba(220,53,69,.25)"></span>
-                Exclusion
+                <span class="hl-legend-dot" style="background:rgba(220,53,69,.2)"></span>
+                Excl. term
               </span>
               {% endif %}
             </span>
@@ -297,6 +315,11 @@
 const INC_CRITERIA = {{ inclusion_criteria | map(attribute='description') | list | tojson }};
 const EXC_CRITERIA = {{ exclusion_criteria | map(attribute='description') | list | tojson }};
 
+// ── User keyword lists ────────────────────────────────────────────────────────
+const KW_POSITIVE = {{ kw_positive | tojson }};
+const KW_NEGATIVE = {{ kw_negative | tojson }};
+const KW_SKIP     = {{ kw_skip     | tojson }};
+
 // ── Keyword highlight toggle ──────────────────────────────────────────────────
 const STOP_WORDS = new Set([
   'that','this','with','from','have','been','were','they','their','there',
@@ -324,6 +347,73 @@ function extractWords(criteriaList) {
   return words;
 }
 
+// Apply a list of exact phrases to an HTML string, wrapping matches in <mark class=cls>
+function applyPhrases(html, phrases, cls) {
+  for (const phrase of phrases) {
+    if (!phrase) continue;
+    const safe = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match phrase not already inside a <mark> tag — simple: don't replace inside tags
+    const re = new RegExp(`(?<![>=])${safe}(?![^<]*>)`, 'gi');
+    html = html.replace(re, m => `<mark class="${cls}">${m}</mark>`);
+  }
+  return html;
+}
+
+// Build combined highlight HTML from criteria words + user keywords
+function buildHighlightHtml(text) {
+  const incWords = extractWords(INC_CRITERIA);
+  const excWords = extractWords(EXC_CRITERIA);
+  const allWords = new Set([...incWords, ...excWords]);
+
+  let html = escapeHtml(text);
+
+  // 1. Skip phrases first (de-emphasised) — longest first to avoid partial overlaps
+  const skipSorted = [...KW_SKIP].sort((a,b) => b.length - a.length);
+  html = applyPhrases(html, skipSorted, 'hl-skip');
+
+  // 2. User negative keywords
+  const negSorted = [...KW_NEGATIVE].sort((a,b) => b.length - a.length);
+  html = applyPhrases(html, negSorted, 'hl-kw-neg');
+
+  // 3. User positive keywords
+  const posSorted = [...KW_POSITIVE].sort((a,b) => b.length - a.length);
+  html = applyPhrases(html, posSorted, 'hl-kw-pos');
+
+  // 4. Criteria words (word-boundary, lower priority than explicit phrases)
+  if (allWords.size > 0) {
+    const safe = [...allWords].map(w => w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+    const pattern = new RegExp('\\b(' + safe.join('|') + ')\\b', 'gi');
+    html = html.replace(pattern, (match) => {
+      // Skip if already inside a mark tag
+      const lower = match.toLowerCase();
+      const isInc = incWords.has(lower);
+      const isExc = excWords.has(lower);
+      if (isInc && isExc) return `<mark class="hl-both">${match}</mark>`;
+      if (isInc)          return `<mark class="hl-inc">${match}</mark>`;
+      return                     `<mark class="hl-exc">${match}</mark>`;
+    });
+  }
+
+  return html;
+}
+
+// Apply user keywords always on load (no button required)
+function applyKeywordsAlways() {
+  if (!KW_POSITIVE.length && !KW_NEGATIVE.length && !KW_SKIP.length) return;
+  const el = document.getElementById('abstract-text');
+  if (!el) return;
+  if (!originalText) originalText = el.textContent;
+  // Only apply phrase-level keywords (skip + pos + neg), not criteria words
+  let html = escapeHtml(originalText);
+  const skipSorted = [...KW_SKIP].sort((a,b) => b.length - a.length);
+  html = applyPhrases(html, skipSorted, 'hl-skip');
+  const negSorted = [...KW_NEGATIVE].sort((a,b) => b.length - a.length);
+  html = applyPhrases(html, negSorted, 'hl-kw-neg');
+  const posSorted = [...KW_POSITIVE].sort((a,b) => b.length - a.length);
+  html = applyPhrases(html, posSorted, 'hl-kw-pos');
+  el.innerHTML = html;
+}
+
 function toggleHighlight() {
   const el = document.getElementById('abstract-text');
   const btn = document.getElementById('highlight-btn');
@@ -335,7 +425,9 @@ function toggleHighlight() {
   highlightOn = !highlightOn;
 
   if (!highlightOn) {
+    // Restore — then re-apply always-on keywords
     el.textContent = originalText;
+    applyKeywordsAlways();
     btn.classList.remove('btn-primary');
     btn.classList.add('btn-outline-secondary');
     btn.innerHTML = '<i class="bi bi-magic me-1"></i>Highlight terms';
@@ -346,31 +438,22 @@ function toggleHighlight() {
   const incWords = extractWords(INC_CRITERIA);
   const excWords = extractWords(EXC_CRITERIA);
   const allWords = new Set([...incWords, ...excWords]);
+  const hasAnything = allWords.size > 0 || KW_POSITIVE.length || KW_NEGATIVE.length || KW_SKIP.length;
 
-  if (allWords.size === 0) {
+  if (!hasAnything) {
     highlightOn = false;
     return;
   }
 
-  const safe = [...allWords].map(w => w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
-  const pattern = new RegExp('\\b(' + safe.join('|') + ')\\b', 'gi');
-
-  let html = escapeHtml(originalText);
-  html = html.replace(pattern, (match) => {
-    const lower = match.toLowerCase();
-    const isInc = incWords.has(lower);
-    const isExc = excWords.has(lower);
-    if (isInc && isExc) return `<mark class="hl-both">${match}</mark>`;
-    if (isInc)          return `<mark class="hl-inc">${match}</mark>`;
-    return                     `<mark class="hl-exc">${match}</mark>`;
-  });
-
-  el.innerHTML = html;
+  el.innerHTML = buildHighlightHtml(originalText);
   btn.classList.remove('btn-outline-secondary');
   btn.classList.add('btn-primary');
   btn.innerHTML = '<i class="bi bi-magic me-1"></i>Remove highlights';
   if (legend) legend.style.removeProperty('display');
 }
+
+// Run on page load
+document.addEventListener('DOMContentLoaded', applyKeywordsAlways);
 
 // ── Exclusion / inclusion mutual exclusivity ──────────────────────────────────
 (function () {

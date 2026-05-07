@@ -59,6 +59,32 @@ mark.hl-both {
   font-weight: 500;
 }
 
+/* ── User keyword highlights ─────────────────────────────────────────────── */
+mark.hl-kw-pos {
+  background: rgba(25, 135, 84, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+  outline: 1px solid rgba(25, 135, 84, 0.4);
+}
+mark.hl-kw-neg {
+  background: rgba(220, 53, 69, 0.30);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+  outline: 1px solid rgba(220, 53, 69, 0.4);
+}
+mark.hl-skip {
+  background: transparent;
+  color: #adb5bd;
+  border-radius: 2px;
+  padding: 0 1px;
+  text-decoration: line-through;
+  text-decoration-color: #ced4da;
+}
+
 /* ── Decision bar ────────────────────────────────────────────────────────── */
 .decision-bar {
   position: sticky;
@@ -266,6 +292,20 @@ kbd {
 [data-bs-theme="dark"] mark.hl-both {
   background: rgba(13, 110, 253, 0.28);
   color: inherit;
+}
+[data-bs-theme="dark"] mark.hl-kw-pos {
+  background: rgba(40, 167, 69, 0.38);
+  outline-color: rgba(40, 167, 69, 0.5);
+  color: inherit;
+}
+[data-bs-theme="dark"] mark.hl-kw-neg {
+  background: rgba(220, 53, 69, 0.36);
+  outline-color: rgba(220, 53, 69, 0.5);
+  color: inherit;
+}
+[data-bs-theme="dark"] mark.hl-skip {
+  color: #6c757d;
+  text-decoration-color: #495057;
 }
 
 /* kbd chip */

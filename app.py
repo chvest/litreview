@@ -34,6 +34,10 @@ class Project(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Inclusion threshold: "any" | "majority" | "all" | integer string e.g. "2"
     threshold = db.Column(db.String(20), default="any", server_default="any", nullable=False)
+    # Keyword highlighting — newline-separated phrases
+    highlight_positive = db.Column(db.Text, default="", server_default="")
+    highlight_negative = db.Column(db.Text, default="", server_default="")
+    highlight_skip     = db.Column(db.Text, default="", server_default="")
     papers = db.relationship("Paper", backref="project", lazy=True, cascade="all, delete-orphan")
     criteria = db.relationship("Criterion", backref="project", lazy=True, cascade="all, delete-orphan")
     reviewers = db.relationship("Reviewer", backref="project", lazy=True, cascade="all, delete-orphan")
@@ -601,6 +605,10 @@ def project_settings(pid):
             except ValueError:
                 raw = "any"
         project.threshold = raw
+
+        project.highlight_positive = request.form.get("highlight_positive", "").strip()
+        project.highlight_negative = request.form.get("highlight_negative", "").strip()
+        project.highlight_skip     = request.form.get("highlight_skip", "").strip()
 
         db.session.commit()
         flash("Project settings saved.", "success")
@@ -1633,6 +1641,9 @@ def review_paper(pid, stage, paper_id):
     active_pilot = get_active_pilot(pid, stage)
     next_stage = STAGES[STAGES.index(stage) + 1] if stage != STAGES[-1] else None
 
+    def _kw_list(raw):
+        return [l.strip() for l in (raw or "").splitlines() if l.strip()]
+
     return render_template("review_paper.html", project=project, paper=paper,
                            reviewer=reviewer, stage=stage,
                            stage_label=STAGE_LABELS[stage],
@@ -1644,7 +1655,10 @@ def review_paper(pid, stage, paper_id):
                            prev_paper_id=prev_paper_id,
                            next_paper_id=next_paper_id,
                            active_pilot=active_pilot,
-                           next_stage=next_stage)
+                           next_stage=next_stage,
+                           kw_positive=_kw_list(project.highlight_positive),
+                           kw_negative=_kw_list(project.highlight_negative),
+                           kw_skip=_kw_list(project.highlight_skip))
 
 
 @app.route("/project/<int:pid>/review/<stage>/complete")
@@ -2462,7 +2476,13 @@ with app.app_context():
         ))
         db.session.commit()
     except Exception:
-        db.session.rollback()   # column already exists — safe to ignore
+        db.session.rollback()
+    for col in ("highlight_positive", "highlight_negative", "highlight_skip"):
+        try:
+            db.session.execute(text(f"ALTER TABLE projects ADD COLUMN {col} TEXT DEFAULT ''"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
