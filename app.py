@@ -2056,13 +2056,18 @@ def kappa_analysis(pid):
 
 # ── Decisions overview (group override) ──────────────────────────────────────
 
-def compute_consensus(decisions):
-    """Same logic as the combined export: exclude only if unanimous, include if any included."""
+def compute_consensus(decisions, threshold="any"):
+    """Return consensus decision using the project's threshold.
+
+    - If passes_threshold → include
+    - If all exclude → exclude
+    - Otherwise → uncertain
+    """
     if not decisions:
         return None
     if all(d == "exclude" for d in decisions):
         return "exclude"
-    if any(d == "include" for d in decisions):
+    if passes_threshold(decisions, threshold):
         return "include"
     return "uncertain"
 
@@ -2104,7 +2109,7 @@ def decisions_overview(pid, stage):
         group      = GroupDecision.query.filter_by(
             paper_id=paper.id, stage=stage).first()
         decisions  = list(rev_map.values())
-        consensus  = compute_consensus(decisions)
+        consensus  = compute_consensus(decisions, project.threshold)
         has_conflict = len(set(decisions)) > 1 if len(decisions) > 1 else False
         paper_data.append({
             "paper":        paper,
@@ -2270,17 +2275,12 @@ def export_reviews_combined(pid):
             if rev:
                 numeric_decisions.append(DECISION_TO_NUM[rev.decision])
 
-        # Consensus: exclude only if unanimous; include if any included
+        # Consensus uses the project threshold
+        NUM_TO_DECISION = {1: "include", 0.5: "uncertain", 0: "exclude"}
         if numeric_decisions:
-            if all(v == 0 for v in numeric_decisions):
-                consensus_num  = 0
-                consensus_text = "exclude"
-            elif any(v == 1 for v in numeric_decisions):
-                consensus_num  = 1
-                consensus_text = "include"
-            else:
-                consensus_num  = 0.5
-                consensus_text = "uncertain"
+            text_decisions = [NUM_TO_DECISION[v] for v in numeric_decisions]
+            consensus_text = compute_consensus(text_decisions, project.threshold)
+            consensus_num  = DECISION_TO_NUM[consensus_text]
         else:
             consensus_num  = ""
             consensus_text = ""

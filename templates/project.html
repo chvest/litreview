@@ -73,6 +73,14 @@
         </a>
       </li>
       <li><hr class="dropdown-divider"></li>
+      <li><h6 class="dropdown-header">Reviewer decision backup</h6></li>
+      <li>
+        <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#exportReviewerModal">
+          <i class="bi bi-person-check me-2"></i>By reviewer &amp; stage…
+          <span class="text-muted small d-block" style="margin-top:-.15rem">Importable 0 / 0.5 / 1 format</span>
+        </a>
+      </li>
+      <li><hr class="dropdown-divider"></li>
       <li><h6 class="dropdown-header">Combined reviewer decisions</h6></li>
       {% for stage in ['title','abstract','fulltext'] %}
       <li>
@@ -273,6 +281,51 @@
   </div>
 </div>
 
+<!-- Export by reviewer modal -->
+<div class="modal fade" id="exportReviewerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-check me-2 text-primary"></i>Export Reviewer Decisions</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        {% if reviewers %}
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Reviewer</label>
+          <select id="exportReviewerId" class="form-select">
+            {% for r in reviewers %}
+            <option value="{{ r.id }}">{{ r.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Stage</label>
+          <select id="exportReviewerStage" class="form-select">
+            <option value="title">Title Review</option>
+            <option value="abstract">Abstract Review</option>
+            <option value="fulltext">Full-Text Review</option>
+          </select>
+        </div>
+        <p class="text-muted small mb-0">
+          Downloads the reviewer's decisions in importable 0 / 0.5 / 1 format.
+        </p>
+        {% else %}
+        <p class="text-muted">No reviewers added to this project yet.</p>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        {% if reviewers %}
+        <button type="button" class="btn btn-primary" onclick="downloadReviewerExport()">
+          <i class="bi bi-download me-1"></i>Download
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Reset stage confirmation modal -->
 <div class="modal fade" id="resetStageModal" tabindex="-1">
   <div class="modal-dialog">
@@ -300,6 +353,13 @@
 
 {% block scripts %}
 <script>
+function downloadReviewerExport() {
+  const rid   = document.getElementById('exportReviewerId').value;
+  const stage = document.getElementById('exportReviewerStage').value;
+  window.location = '{{ url_for("export_reviews", pid=project.id) }}?reviewer_id=' + rid + '&stage=' + stage;
+  bootstrap.Modal.getInstance(document.getElementById('exportReviewerModal')).hide();
+}
+
 function confirmReset(stage, label, count) {
   document.getElementById('resetStageLabel').textContent = label;
   document.getElementById('resetStageBody').innerHTML =

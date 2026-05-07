@@ -113,9 +113,20 @@
   <!-- Right: paper list -->
   <div class="col-lg-8">
     <div class="card">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h6 class="mb-0">Paper List</h6>
-        <span class="badge bg-secondary">{{ paper_list|length }} papers</span>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          {% if paper_list %}
+          <div class="btn-group btn-group-sm" id="paperFilter" role="group">
+            <button type="button" class="btn btn-outline-secondary active" data-filter="all">All</button>
+            <button type="button" class="btn btn-outline-success"  data-filter="include">Include</button>
+            <button type="button" class="btn btn-outline-danger"   data-filter="exclude">Exclude</button>
+            <button type="button" class="btn btn-outline-warning"  data-filter="uncertain">Uncertain</button>
+            <button type="button" class="btn btn-outline-secondary" data-filter="unreviewed">Unreviewed</button>
+          </div>
+          {% endif %}
+          <span class="badge bg-secondary" id="paperCount">{{ paper_list|length }} papers</span>
+        </div>
       </div>
       {% if paper_list %}
       <div class="card-body p-0" style="max-height:70vh; overflow-y:auto">
@@ -170,4 +181,33 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const filterGroup = document.getElementById('paperFilter');
+if (filterGroup) {
+  filterGroup.addEventListener('click', e => {
+    const btn = e.target.closest('[data-filter]');
+    if (!btn) return;
+    const filter = btn.dataset.filter;
+
+    // Update active button
+    filterGroup.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Show/hide items
+    const items = document.querySelectorAll('.paper-list-item');
+    let visible = 0;
+    items.forEach(li => {
+      const show = filter === 'all'
+        || (filter === 'unreviewed' && li.classList.contains('undone'))
+        || li.classList.contains('done-' + filter);
+      li.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    document.getElementById('paperCount').textContent = visible + ' papers';
+  });
+}
+</script>
 {% endblock %}
