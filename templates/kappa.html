@@ -78,13 +78,15 @@
           </thead>
           <tbody>
             {% for pair in all_pairs %}
-            <tr {% if r1 and r2 and pair.r_a.id == r1.id and pair.r_b.id == r2.id %}class="table-primary"{% endif %}>
+            {% set pair_url = url_for('kappa_analysis', pid=project.id, stage=stage, r1=pair.r_a.id, r2=pair.r_b.id) %}
+            {% set is_active = r1 and r2 and pair.r_a.id == r1.id and pair.r_b.id == r2.id %}
+            <tr class="{% if is_active %}table-primary{% endif %} {% if not pair.insufficient %}pair-row{% endif %}"
+                {% if not pair.insufficient %}style="cursor:pointer" onclick="window.location='{{ pair_url }}'"{% endif %}>
               <td>{{ pair.r_a.name }}</td>
               <td>{{ pair.r_b.name }}</td>
               <td class="text-center text-muted small">{{ pair.n }}</td>
               {% if pair.insufficient %}
-              <td colspan="3" class="text-center text-muted small fst-italic">Not enough overlap</td>
-              <td></td>
+              <td colspan="4" class="text-center text-muted small fst-italic">Not enough overlap</td>
               {% else %}
               <td class="text-center fw-semibold
                 {% if pair.simple_pct >= 80 %}text-success
@@ -111,12 +113,6 @@
                 {% if pair.degenerate %}
                 <i class="bi bi-exclamation-triangle-fill text-warning" title="Unreliable — skewed distribution"></i>
                 {% endif %}
-              </td>
-              <td class="text-end">
-                <a href="{{ url_for('kappa_analysis', pid=project.id, stage=stage, r1=pair.r_a.id, r2=pair.r_b.id) }}"
-                   class="btn btn-xs btn-sm btn-outline-secondary py-0 px-2" style="font-size:.75rem">
-                  Conflicts →
-                </a>
               </td>
               {% endif %}
             </tr>
