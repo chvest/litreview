@@ -9,53 +9,31 @@
   </ol>
 </nav>
 
+<!-- Stage selector -->
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+  <form method="get" class="d-flex align-items-center gap-2">
+    {% if r1 %}<input type="hidden" name="r1" value="{{ r1.id }}">{% endif %}
+    {% if r2 %}<input type="hidden" name="r2" value="{{ r2.id }}">{% endif %}
+    <label class="fw-semibold small mb-0">Stage:</label>
+    <select name="stage" class="form-select form-select-sm" style="width:auto" onchange="this.form.submit()">
+      {% for s in stages %}
+      <option value="{{ s }}" {% if s == stage %}selected{% endif %}>{{ stage_labels[s] }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <span class="text-muted small">{{ reviewers|length }} reviewer{{ 's' if reviewers|length != 1 }}</span>
+</div>
+
 <div class="row g-4">
 
-  <!-- Selector -->
-  <div class="col-lg-4">
+  <!-- Left: interpretation guide -->
+  <div class="col-lg-3">
     <div class="card">
       <div class="card-header bg-white">
-        <h6 class="mb-0"><i class="bi bi-sliders me-2 text-primary"></i>Compare Reviewers</h6>
+        <h6 class="mb-0"><i class="bi bi-info-circle me-2 text-primary"></i>Score guide</h6>
       </div>
-      <div class="card-body">
-        <form method="get">
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Stage</label>
-            <select name="stage" class="form-select">
-              {% for s in stages %}
-              <option value="{{ s }}" {% if s == stage %}selected{% endif %}>
-                {{ stage_labels[s] }}
-              </option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Reviewer 1</label>
-            <select name="r1" class="form-select">
-              <option value="">— select —</option>
-              {% for r in reviewers %}
-              <option value="{{ r.id }}" {% if r1 and r.id == r1.id %}selected{% endif %}>{{ r.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Reviewer 2</label>
-            <select name="r2" class="form-select">
-              <option value="">— select —</option>
-              {% for r in reviewers %}
-              <option value="{{ r.id }}" {% if r2 and r.id == r2.id %}selected{% endif %}>{{ r.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary w-100">Calculate</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="card mt-3">
-      <div class="card-body small">
-        <h6>Score interpretation</h6>
-        <table class="table table-sm table-borderless mb-0">
+      <div class="card-body small p-2">
+        <table class="table table-sm table-borderless mb-2">
           <tbody>
             <tr><td>&lt; 0</td><td class="text-danger">Poor</td></tr>
             <tr><td>0.01–0.20</td><td>Slight</td></tr>
@@ -65,45 +43,128 @@
             <tr><td>0.81–1.00</td><td class="text-success">Almost Perfect</td></tr>
           </tbody>
         </table>
-        <p class="text-muted mb-0 mt-2">
-          Scale from Landis &amp; Koch (1977), originally defined for Cohen's κ
-          and commonly applied to Gwet's AC1. An AC1 ≥ 0.6 is generally considered
-          acceptable for systematic reviews.
+        <p class="text-muted mb-0" style="font-size:.75rem">
+          Landis &amp; Koch (1977). <strong>Gwet's AC1</strong>
+          <i class="bi bi-patch-check-fill text-primary"></i>
+          is preferred for systematic reviews — robust to high exclusion rates.
         </p>
       </div>
     </div>
   </div>
 
-  <!-- Results -->
-  <div class="col-lg-8">
+  <!-- Right: overview + detail -->
+  <div class="col-lg-9">
 
-    {% if kappa_result %}
+    <!-- ── Overview table ───────────────────────────────────────────────── -->
+    {% if all_pairs %}
     <div class="card mb-4">
-      <div class="card-body py-4">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-table me-2 text-primary"></i>All Pairs — {{ stage_labels[stage] }}</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Reviewer A</th>
+              <th>Reviewer B</th>
+              <th class="text-center">N</th>
+              <th class="text-center">Agreement</th>
+              <th class="text-center">
+                AC1 <i class="bi bi-patch-check-fill text-primary" style="font-size:.75rem"></i>
+              </th>
+              <th class="text-center">κ</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pair in all_pairs %}
+            <tr {% if r1 and r2 and pair.r_a.id == r1.id and pair.r_b.id == r2.id %}class="table-primary"{% endif %}>
+              <td>{{ pair.r_a.name }}</td>
+              <td>{{ pair.r_b.name }}</td>
+              <td class="text-center text-muted small">{{ pair.n }}</td>
+              {% if pair.insufficient %}
+              <td colspan="3" class="text-center text-muted small fst-italic">Not enough overlap</td>
+              <td></td>
+              {% else %}
+              <td class="text-center fw-semibold
+                {% if pair.simple_pct >= 80 %}text-success
+                {% elif pair.simple_pct >= 60 %}text-primary
+                {% elif pair.simple_pct >= 40 %}text-warning
+                {% else %}text-danger{% endif %}">
+                {{ pair.simple_pct }}%
+              </td>
+              <td class="text-center fw-semibold
+                {% if pair.ac1 >= 0.8 %}text-success
+                {% elif pair.ac1 >= 0.6 %}text-primary
+                {% elif pair.ac1 >= 0.4 %}text-warning
+                {% else %}text-danger{% endif %}">
+                {{ pair.ac1 }}
+                <span class="text-muted fw-normal" style="font-size:.72rem">{{ pair.ac1_interp }}</span>
+              </td>
+              <td class="text-center
+                {% if pair.degenerate %}text-secondary
+                {% elif pair.kappa >= 0.8 %}text-success
+                {% elif pair.kappa >= 0.6 %}text-primary
+                {% elif pair.kappa >= 0.4 %}text-warning
+                {% else %}text-danger{% endif %}">
+                {{ pair.kappa }}
+                {% if pair.degenerate %}
+                <i class="bi bi-exclamation-triangle-fill text-warning" title="Unreliable — skewed distribution"></i>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <a href="{{ url_for('kappa_analysis', pid=project.id, stage=stage, r1=pair.r_a.id, r2=pair.r_b.id) }}"
+                   class="btn btn-xs btn-sm btn-outline-secondary py-0 px-2" style="font-size:.75rem">
+                  Conflicts →
+                </a>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% elif reviewers|length < 2 %}
+    <div class="card mb-4">
+      <div class="card-body text-muted small">
+        Add at least two reviewers to compare agreement.
+      </div>
+    </div>
+    {% endif %}
 
-        <!-- Three metrics in a row -->
+    <!-- ── Pair detail ───────────────────────────────────────────────────── -->
+    {% if kappa_result %}
+    <div class="card mb-4" id="pair-detail">
+      <div class="card-header bg-white d-flex align-items-center gap-2">
+        <h6 class="mb-0">
+          <i class="bi bi-people me-2 text-primary"></i>
+          {{ r1.name }} vs {{ r2.name }}
+          <span class="text-muted fw-normal small ms-1">— {{ stage_labels[stage] }}</span>
+        </h6>
+        <a href="{{ url_for('kappa_analysis', pid=project.id, stage=stage) }}"
+           class="btn btn-sm btn-outline-secondary ms-auto py-0">
+          <i class="bi bi-x me-1"></i>Close
+        </a>
+      </div>
+      <div class="card-body py-4">
         <div class="row text-center g-0">
-          <!-- Simple agreement -->
           <div class="col-4 border-end">
             <div class="text-muted small mb-1">Simple agreement</div>
             <div class="display-5 fw-bold
-              {% if kappa_result.simple_agreement >= 80 %}text-success
-              {% elif kappa_result.simple_agreement >= 60 %}text-primary
-              {% elif kappa_result.simple_agreement >= 40 %}text-warning
+              {% if kappa_result.simple_pct >= 80 %}text-success
+              {% elif kappa_result.simple_pct >= 60 %}text-primary
+              {% elif kappa_result.simple_pct >= 40 %}text-warning
               {% else %}text-danger{% endif %}">
-              {{ kappa_result.simple_agreement }}%
+              {{ kappa_result.simple_pct }}%
             </div>
             <div class="text-muted small mt-1">
-              {{ kappa_result.n_agreed }} / {{ kappa_result.n_papers }} papers
+              {{ kappa_result.n_agreed }} / {{ kappa_result.n }} papers
             </div>
           </div>
-
-          <!-- Gwet's AC1 — primary -->
           <div class="col-4 border-end">
             <div class="text-muted small mb-1">
-              Gwet's AC1
-              <i class="bi bi-patch-check-fill text-primary ms-1"
-                 title="Recommended for systematic reviews — robust to high exclusion rates"></i>
+              Gwet's AC1 <i class="bi bi-patch-check-fill text-primary"></i>
             </div>
             <div class="display-5 fw-bold
               {% if kappa_result.ac1 >= 0.8 %}text-success
@@ -112,16 +173,13 @@
               {% else %}text-danger{% endif %}">
               {{ kappa_result.ac1 }}
             </div>
-            <div class="small mt-1">{{ kappa_result.ac1_interpretation }}</div>
+            <div class="small mt-1">{{ kappa_result.ac1_interp }}</div>
           </div>
-
-          <!-- Cohen's κ — secondary -->
           <div class="col-4">
             <div class="text-muted small mb-1">
               Cohen's κ
               {% if kappa_result.degenerate %}
-              <i class="bi bi-exclamation-triangle-fill text-warning ms-1"
-                 title="Unreliable — see note below"></i>
+              <i class="bi bi-exclamation-triangle-fill text-warning" title="Unreliable"></i>
               {% endif %}
             </div>
             <div class="display-5 fw-bold
@@ -133,28 +191,18 @@
               {{ kappa_result.kappa }}
             </div>
             <div class="small mt-1 text-muted">
-              {% if kappa_result.degenerate %}unreliable{% else %}{{ kappa_result.kappa_interpretation }}{% endif %}
+              {% if kappa_result.degenerate %}unreliable{% else %}{{ kappa_result.kappa_interp }}{% endif %}
             </div>
           </div>
         </div>
 
-        <div class="text-muted small text-center mt-3">
-          {{ stage_labels[stage] }} &mdash; {{ kappa_result.n_papers }} papers reviewed by both
-          <strong>{{ r1.name }}</strong> and <strong>{{ r2.name }}</strong>
-        </div>
-
-        <!-- Prevalence warning (shown whenever κ is misleadingly low) -->
         {% if kappa_result.degenerate or (kappa_result.ac1 - kappa_result.kappa) > 0.2 %}
         <div class="alert alert-info py-2 small mt-3 mb-0">
           <i class="bi bi-info-circle me-1"></i>
           <strong>Why does Cohen's κ look low?</strong>
-          In literature reviews, most papers are excluded, which creates a highly
-          skewed label distribution. Cohen's κ corrects for chance agreement using
-          each reviewer's individual marginal rates — when both reviewers exclude
-          ~90 % of papers, the formula treats most of their agreement as
-          <em>expected by chance</em>, driving κ down even when actual agreement is
-          high. <strong>Gwet's AC1</strong> corrects for this by using averaged
-          marginals and is the recommended metric for systematic reviews.
+          In literature reviews, most papers are excluded, creating a highly skewed distribution.
+          κ treats most agreement as expected by chance; <strong>Gwet's AC1</strong> corrects for this
+          and is the recommended metric for systematic reviews.
         </div>
         {% endif %}
       </div>
@@ -181,7 +229,6 @@
               </tr>
             </thead>
             <tbody>
-              {% set row_labels = ['include', 'uncertain', 'exclude'] %}
               {% for i in range(3) %}
               <tr>
                 <td class="text-start">
@@ -206,8 +253,10 @@
 
     {% if conflicts %}
     <div class="card">
-      <div class="card-header bg-white d-flex justify-content-between">
-        <h6 class="mb-0"><i class="bi bi-exclamation-triangle me-2 text-warning"></i>Conflicts</h6>
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">
+          <i class="bi bi-exclamation-triangle me-2 text-warning"></i>Conflicting decisions
+        </h6>
         <span class="badge bg-warning text-dark">{{ conflicts|length }}</span>
       </div>
       <div class="card-body p-0" style="max-height:40vh;overflow-y:auto">
@@ -225,8 +274,7 @@
               <td>
                 <a href="{{ url_for('review_paper', pid=project.id, stage=stage, paper_id=c.paper.id) }}"
                    class="text-decoration-none text-body">
-                  {{ c.paper.title[:80] if c.paper.title else '(no title)' }}
-                  {% if c.paper.title and c.paper.title|length > 80 %}…{% endif %}
+                  {{ c.paper.title[:90] if c.paper.title else '(no title)' }}{% if c.paper.title and c.paper.title|length > 90 %}…{% endif %}
                 </a>
               </td>
               <td><span class="badge badge-{{ c.d1 }}">{{ c.d1 }}</span></td>
@@ -237,23 +285,23 @@
         </table>
       </div>
     </div>
+    {% else %}
+    <div class="alert alert-success py-2 small">
+      <i class="bi bi-check-circle me-1"></i>
+      No conflicting decisions between {{ r1.name }} and {{ r2.name }} for this stage.
+    </div>
     {% endif %}
 
-    {% elif r1 and r2 %}
-    <div class="card">
-      <div class="card-body text-muted">
-        Not enough overlapping reviews to calculate kappa.
-        Both reviewers need to have reviewed the same papers in the selected stage.
-      </div>
-    </div>
-    {% else %}
-    <div class="card">
-      <div class="card-body text-muted">
-        Select two reviewers and a stage, then click <strong>Calculate</strong>.
-      </div>
-    </div>
-    {% endif %}
+    {% endif %}{# end kappa_result #}
 
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Scroll to pair detail when it's present
+const detail = document.getElementById('pair-detail');
+if (detail) detail.scrollIntoView({behavior: 'smooth', block: 'start'});
+</script>
 {% endblock %}

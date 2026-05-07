@@ -2003,65 +2003,81 @@ def kappa_analysis(pid):
     r1_id = request.args.get("r1", type=int)
     r2_id = request.args.get("r2", type=int)
 
+    label_map = {"include": 2, "uncertain": 1, "exclude": 0}
+
+    def _review_map(reviewer_id):
+        return {r.paper_id: r.decision for r in
+                Review.query.filter_by(reviewer_id=reviewer_id, stage=stage)
+                .join(Paper).filter(Paper.project_id == pid).all()}
+
+    def _compute_pair(ra, rb):
+        """Return a stats dict for a reviewer pair, or None if insufficient data."""
+        ma = _review_map(ra.id)
+        mb = _review_map(rb.id)
+        common = set(ma) & set(mb)
+        if len(common) < 2:
+            return {"r_a": ra, "r_b": rb, "n": len(common), "insufficient": True}
+        y1 = [label_map[ma[p]] for p in common]
+        y2 = [label_map[mb[p]] for p in common]
+        agreed = sum(1 for p in common if ma[p] == mb[p])
+        simple_pct = round(100 * agreed / len(common), 1)
+        degenerate = len(set(y1)) == 1 or len(set(y2)) == 1
+        try:
+            k   = cohen_kappa_score(y1, y2, labels=[0, 1, 2])
+            ac1 = gwets_ac1(y1, y2, n_categories=3)
+        except Exception:
+            k = ac1 = 0.0
+        return {
+            "r_a": ra, "r_b": rb,
+            "n":              len(common),
+            "n_agreed":       agreed,
+            "simple_pct":     simple_pct,
+            "kappa":          round(k,   4),
+            "ac1":            round(ac1, 4),
+            "kappa_interp":   interpret_agreement(k),
+            "ac1_interp":     interpret_agreement(ac1),
+            "degenerate":     degenerate,
+            "insufficient":   False,
+        }
+
+    # Pre-compute all pairs for the overview table
+    from itertools import combinations
+    all_pairs = [_compute_pair(ra, rb) for ra, rb in combinations(reviewers, 2)]
+
+    # Full detail (matrix + conflicts) for the selected pair
     kappa_result = None
     agreement_matrix = None
     conflicts = []
 
     if r1_id and r2_id and r1_id != r2_id:
-        r1_map = {r.paper_id: r.decision for r in
-                  Review.query.filter_by(reviewer_id=r1_id, stage=stage)
-                  .join(Paper).filter(Paper.project_id == pid).all()}
-        r2_map = {r.paper_id: r.decision for r in
-                  Review.query.filter_by(reviewer_id=r2_id, stage=stage)
-                  .join(Paper).filter(Paper.project_id == pid).all()}
-
-        common = set(r1_map) & set(r2_map)
-        if len(common) >= 2:
-            label_map = {"include": 2, "uncertain": 1, "exclude": 0}
-            y1 = [label_map[r1_map[p]] for p in common]
-            y2 = [label_map[r2_map[p]] for p in common]
-            agreed = sum(1 for p in common if r1_map[p] == r2_map[p])
-            simple_pct = round(100 * agreed / len(common), 1)
-            degenerate = len(set(y1)) == 1 or len(set(y2)) == 1
-            try:
-                k    = cohen_kappa_score(y1, y2, labels=[0, 1, 2])
-                ac1  = gwets_ac1(y1, y2, n_categories=3)
-                kappa_result = {
-                    "kappa":              round(k,   4),
-                    "ac1":                round(ac1, 4),
-                    "n_papers":           len(common),
-                    "n_agreed":           agreed,
-                    "simple_agreement":   simple_pct,
-                    "kappa_interpretation": interpret_agreement(k),
-                    "ac1_interpretation":   interpret_agreement(ac1),
-                    "degenerate":         degenerate,
-                }
+        r1 = Reviewer.query.get(r1_id)
+        r2 = Reviewer.query.get(r2_id)
+        if r1 and r2:
+            pair = _compute_pair(r1, r2)
+            if not pair["insufficient"]:
+                ma = _review_map(r1.id)
+                mb = _review_map(r2.id)
+                common = set(ma) & set(mb)
+                kappa_result = pair
                 decisions = ["include", "uncertain", "exclude"]
                 matrix = [[0] * 3 for _ in range(3)]
                 for paper_id in common:
-                    i = decisions.index(r1_map[paper_id])
-                    j = decisions.index(r2_map[paper_id])
+                    i = decisions.index(ma[paper_id])
+                    j = decisions.index(mb[paper_id])
                     matrix[i][j] += 1
                 agreement_matrix = matrix
-
-                # Conflicts: papers where decisions differ
                 for paper_id in common:
-                    if r1_map[paper_id] != r2_map[paper_id]:
+                    if ma[paper_id] != mb[paper_id]:
                         p = Paper.query.get(paper_id)
-                        conflicts.append({
-                            "paper": p,
-                            "d1": r1_map[paper_id],
-                            "d2": r2_map[paper_id],
-                        })
-            except Exception as e:
-                flash(f"Error calculating kappa: {e}", "danger")
-        else:
-            flash(f"Need at least 2 papers reviewed by both reviewers (found {len(common)}).", "warning")
+                        conflicts.append({"paper": p, "d1": ma[paper_id], "d2": mb[paper_id]})
+            else:
+                flash(f"Need at least 2 papers reviewed by both reviewers (found {pair['n']}).", "warning")
+    else:
+        r1 = r2 = None
 
-    r1 = Reviewer.query.get(r1_id) if r1_id else None
-    r2 = Reviewer.query.get(r2_id) if r2_id else None
     return render_template("kappa.html", project=project, reviewers=reviewers,
                            stage=stage, r1=r1, r2=r2,
+                           all_pairs=all_pairs,
                            kappa_result=kappa_result,
                            agreement_matrix=agreement_matrix,
                            conflicts=conflicts,
