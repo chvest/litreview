@@ -2073,17 +2073,29 @@ def kappa_analysis(pid):
 def compute_consensus(decisions, threshold="any"):
     """Return consensus decision using the project's threshold.
 
-    - If passes_threshold → include
+    decisions — list of decision strings ("include" | "uncertain" | "exclude")
     - If all exclude → exclude
+    - If passes threshold (non-excluded count meets rule) → include
     - Otherwise → uncertain
     """
     if not decisions:
         return None
     if all(d == "exclude" for d in decisions):
         return "exclude"
-    if passes_threshold(decisions, threshold):
-        return "include"
-    return "uncertain"
+    non_excluded = sum(1 for d in decisions if d != "exclude")
+    n = len(decisions)
+    if threshold == "any":
+        passes = non_excluded >= 1
+    elif threshold == "majority":
+        passes = non_excluded > n / 2
+    elif threshold == "all":
+        passes = non_excluded == n
+    else:
+        try:
+            passes = non_excluded >= int(threshold)
+        except ValueError:
+            passes = non_excluded >= 1
+    return "include" if passes else "uncertain"
 
 
 @app.route("/project/<int:pid>/decisions/<stage>", methods=["GET", "POST"])
