@@ -38,7 +38,11 @@
           </div>
           {% endif %}
 
-          {% if stats and stats.remaining > 0 %}
+          {% if stats and stats.total == 0 %}
+          <div class="alert alert-info py-2 small mb-2">
+            <i class="bi bi-hourglass me-1"></i>No eligible papers yet for this stage.
+          </div>
+          {% elif stats and stats.remaining > 0 %}
           <a href="{{ url_for('review_next', pid=project.id, stage=stage) }}"
              class="btn btn-success w-100 mb-2">
             <i class="bi bi-play-fill me-1"></i>

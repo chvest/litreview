@@ -40,7 +40,8 @@
             <th style="width:18%">Authors</th>
             <th style="width:4rem" class="text-center">Year</th>
             <th style="width:18%">DOI</th>
-            <th style="width:8%">Source</th>
+            <th style="width:12%">Venue</th>
+            <th style="width:12%">Databases</th>
             <th style="width:3rem"></th>
           </tr>
         </thead>
@@ -81,7 +82,14 @@
               <span class="text-warning">—</span>
               {% endif %}
             </td>
-            <td class="small text-muted">{{ paper.source or '' }}</td>
+            <td class="small text-muted">{{ paper.venue or '' }}</td>
+            <td class="small">
+              {% if paper.databases %}
+                {% for db in paper.databases.split('|') %}
+                  <span class="badge bg-secondary fw-normal" style="font-size:.7rem">{{ db.strip() }}</span>
+                {% endfor %}
+              {% endif %}
+            </td>
             <td class="text-end">
               <form method="post"
                     action="{{ url_for('delete_paper', pid=project.id, paper_id=paper.id) }}"

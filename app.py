@@ -34,6 +34,8 @@ class Project(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Inclusion threshold: "any" | "majority" | "all" | integer string e.g. "2"
     threshold = db.Column(db.String(20), default="any", server_default="any", nullable=False)
+    # Quality assessment at full-text stage: "off" | "optional" | "required"
+    quality_assessment = db.Column(db.String(20), default="off", server_default="off", nullable=False)
     # Keyword highlighting — newline-separated phrases
     highlight_positive = db.Column(db.Text, default="", server_default="")
     highlight_negative = db.Column(db.Text, default="", server_default="")
@@ -52,7 +54,8 @@ class Paper(db.Model):
     abstract = db.Column(db.Text)
     year = db.Column(db.Integer)
     doi = db.Column(db.String(300))
-    source = db.Column(db.String(200))
+    venue = db.Column(db.Text)                                              # journal / proceedings
+    databases = db.Column(db.Text, default="", server_default="")          # pipe-separated search engine names
     source_type = db.Column(db.String(20), default='search', server_default='search', nullable=False)
     reviews = db.relationship("Review", backref="paper", lazy=True, cascade="all, delete-orphan")
     order_entries = db.relationship("ReviewOrder", backref="paper", lazy=True, cascade="all, delete-orphan")
@@ -85,6 +88,7 @@ class Review(db.Model):
     stage = db.Column(db.String(20), nullable=False)  # title | abstract | fulltext
     decision = db.Column(db.String(20), nullable=False)  # include | exclude | uncertain
     exclusion_criteria = db.Column(db.String(500))  # comma-separated criterion IDs
+    quality_score = db.Column(db.String(20))         # high | moderate | low | critically_low (fulltext only)
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     __table_args__ = (db.UniqueConstraint("paper_id", "reviewer_id", "stage"),)
@@ -165,6 +169,14 @@ def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None):
         threshold = (project.threshold if project and project.threshold else "any")
 
     all_papers = Paper.query.filter_by(project_id=project_id).all()
+    def _passed_stage(paper, prev_stage):
+        """Return True if paper passed prev_stage (GroupDecision override wins)."""
+        gd = GroupDecision.query.filter_by(paper_id=paper.id, stage=prev_stage).first()
+        if gd:
+            return gd.decision in ('include', 'uncertain')
+        prev_reviews = Review.query.filter_by(paper_id=paper.id, stage=prev_stage).all()
+        return passes_threshold(prev_reviews, threshold)
+
     if stage == "title":
         # Snowball papers skip title review — only original search papers are screened here
         eligible = [p for p in all_papers if p.source_type != 'snowball']
@@ -175,14 +187,12 @@ def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None):
             if paper.source_type == 'snowball':
                 eligible.append(paper)
             else:
-                prev_reviews = Review.query.filter_by(paper_id=paper.id, stage='title').all()
-                if passes_threshold(prev_reviews, threshold):
+                if _passed_stage(paper, 'title'):
                     eligible.append(paper)
     else:  # fulltext
         eligible = []
         for paper in all_papers:
-            prev_reviews = Review.query.filter_by(paper_id=paper.id, stage='abstract').all()
-            if passes_threshold(prev_reviews, threshold):
+            if _passed_stage(paper, 'abstract'):
                 eligible.append(paper)
 
     if not ignore_pilot:
@@ -364,9 +374,10 @@ _COL_ALIASES = {
         "publication date",          # fallback if year col absent
     ],
     "col_doi": ["doi", "di", "digital object identifier"],
-    "col_source": [
+    "col_venue": [
         "source", "source title", "publication title", "journal",
-        "journal title", "so", "book series title",
+        "journal title", "so", "book series title", "venue",
+        "conference", "proceedings",
     ],
 }
 
@@ -476,6 +487,10 @@ def import_project_full():
         name=name,
         description=pdata.get("description", ""),
         threshold=pdata.get("threshold", "any"),
+        quality_assessment=pdata.get("quality_assessment", "off"),
+        highlight_positive=pdata.get("highlight_positive", ""),
+        highlight_negative=pdata.get("highlight_negative", ""),
+        highlight_skip=pdata.get("highlight_skip", ""),
     )
     db.session.add(project)
     db.session.flush()  # get project.id
@@ -519,7 +534,8 @@ def import_project_full():
             abstract    = pdata.get("abstract") or "",
             year        = pdata.get("year") or None,
             doi         = pdata.get("doi") or "",
-            source      = pdata.get("source") or "",
+            venue       = pdata.get("venue") or pdata.get("source") or "",
+            databases   = pdata.get("databases") or "",
             source_type = pdata.get("source_type") or "search",
         )
         db.session.add(paper)
@@ -544,11 +560,13 @@ def import_project_full():
             if new_id:
                 new_exc_ids.append(str(new_id))
         exc_str = ",".join(new_exc_ids) if new_exc_ids else None
+        qs = (rev.get("quality_score") or "").strip() or None
         db.session.add(Review(
             paper_id=paper_id, reviewer_id=reviewer_id,
             stage=stage, decision=decision,
             exclusion_criteria=exc_str,
             notes=rev.get("notes") or None,
+            quality_score=qs if stage == "fulltext" else None,
         ))
         reviews_added += 1
 
@@ -615,6 +633,11 @@ def project_settings(pid):
         project.highlight_negative = request.form.get("highlight_negative", "").strip()
         project.highlight_skip     = request.form.get("highlight_skip", "").strip()
 
+        qa = request.form.get("quality_assessment", "off")
+        if qa not in ("off", "optional", "required"):
+            qa = "off"
+        project.quality_assessment = qa
+
         db.session.commit()
         flash("Project settings saved.", "success")
         return redirect(url_for("project_settings", pid=pid))
@@ -669,6 +692,10 @@ def export_project_full(pid):
             "name": project.name,
             "description": project.description or "",
             "threshold": project.threshold,
+            "quality_assessment": project.quality_assessment,
+            "highlight_positive": project.highlight_positive or "",
+            "highlight_negative": project.highlight_negative or "",
+            "highlight_skip":     project.highlight_skip     or "",
         },
         "criteria": [
             {
@@ -688,7 +715,8 @@ def export_project_full(pid):
                 "abstract":    p.abstract or "",
                 "year":        p.year,
                 "doi":         p.doi or "",
-                "source":      p.source or "",
+                "venue":       p.venue or "",
+                "databases":   p.databases or "",
                 "source_type": p.source_type,
             }
             for p in papers
@@ -705,6 +733,7 @@ def export_project_full(pid):
                     if cid.strip() and int(cid) in criterion_id_to_code
                 ],
                 "notes": rev.notes or "",
+                "quality_score": rev.quality_score or "",
             }
             for rev in reviews
         ],
@@ -789,10 +818,20 @@ def project_dashboard(pid):
     all_reviewers = Reviewer.query.filter_by(project_id=pid).all()
     for stage in STAGES:
         eligible = len(get_eligible_papers(pid, stage, ignore_pilot=True))
-        reviewed_papers = (db.session.query(Review.paper_id)
-                           .join(Paper)
-                           .filter(Paper.project_id == pid, Review.stage == stage)
-                           .distinct().count())
+        # Count papers that have either an individual Review OR a GroupDecision at this stage
+        reviewed_via_review = {r.paper_id for r in (
+            db.session.query(Review.paper_id)
+            .join(Paper)
+            .filter(Paper.project_id == pid, Review.stage == stage)
+            .all()
+        )}
+        reviewed_via_gd = {g.paper_id for g in (
+            db.session.query(GroupDecision.paper_id)
+            .join(Paper)
+            .filter(Paper.project_id == pid, GroupDecision.stage == stage)
+            .all()
+        )}
+        reviewed_papers = len(reviewed_via_review | reviewed_via_gd)
         active_pilot = get_active_pilot(pid, stage)
         pilot_size = len(active_pilot.papers) if active_pilot else 0
 
@@ -845,6 +884,7 @@ def import_papers(pid):
 
         session["import_file"] = filepath
         session["import_source_type"] = source_type
+        session["import_database_name"] = request.form.get("database_name", "").strip()
         return redirect(url_for("import_columns", pid=pid))
     return render_template("import.html", project=project, source_type=source_type)
 
@@ -855,8 +895,9 @@ def import_columns(pid):
     if "import_file" not in session:
         return redirect(url_for("import_papers", pid=pid))
 
-    filepath    = session["import_file"]
-    source_type = session.get("import_source_type", "search")
+    filepath      = session["import_file"]
+    source_type   = session.get("import_source_type", "search")
+    database_name = session.get("import_database_name", "")
     try:
         df_preview = read_upload_file(filepath)
     except Exception as e:
@@ -873,7 +914,7 @@ def import_columns(pid):
             "abstract": request.form.get("col_abstract"),
             "year":     request.form.get("col_year"),
             "doi":      request.form.get("col_doi"),
-            "source":   request.form.get("col_source"),
+            "venue":    request.form.get("col_venue"),
         }
 
         filepath = session["import_file"]
@@ -893,11 +934,21 @@ def import_columns(pid):
             s = str(val).strip()
             return "" if s.lower() == "nan" else s
 
-        # Build normalised lookup sets for fast duplicate detection
-        existing_dois   = {normalize_doi(p.doi)    for p in Paper.query.filter_by(project_id=pid).all() if p.doi}
-        existing_titles = {normalize_title(p.title) for p in Paper.query.filter_by(project_id=pid).all() if p.title}
+        def merge_database(paper, db_name):
+            """Add db_name to paper.databases if not already present."""
+            if not db_name:
+                return
+            current = [d.strip() for d in (paper.databases or "").split("|") if d.strip()]
+            if db_name not in current:
+                current.append(db_name)
+                paper.databases = " | ".join(current)
 
-        imported = skipped = no_doi = 0
+        # Build normalised lookup dicts for fast duplicate detection (doi/title → paper)
+        all_existing = Paper.query.filter_by(project_id=pid).all()
+        doi_to_paper   = {normalize_doi(p.doi):    p for p in all_existing if p.doi}
+        title_to_paper = {normalize_title(p.title): p for p in all_existing if p.title}
+
+        imported = skipped = merged = no_doi = 0
         for _, row in df.iterrows():
             title = col("title")
             doi   = col("doi")
@@ -908,9 +959,12 @@ def import_columns(pid):
             ndoi   = normalize_doi(doi)     if doi   else ""
             ntitle = normalize_title(title) if title else ""
 
-            # Duplicate check (normalised)
-            if (ndoi and ndoi in existing_dois) or (ntitle and ntitle in existing_titles):
-                skipped += 1
+            # Duplicate: merge database name into existing paper instead of discarding
+            existing = (doi_to_paper.get(ndoi) if ndoi else None) or \
+                       (title_to_paper.get(ntitle) if ntitle else None)
+            if existing:
+                merge_database(existing, database_name)
+                merged += 1
                 continue
 
             year = None
@@ -921,34 +975,43 @@ def import_columns(pid):
                 except ValueError:
                     pass
 
-            db.session.add(Paper(project_id=pid, title=title or None,
-                                 authors=col("authors") or None,
-                                 abstract=col("abstract") or None,
-                                 year=year,
-                                 doi=doi or None,
-                                 source=col("source") or None,
-                                 source_type=source_type))
+            paper = Paper(project_id=pid, title=title or None,
+                          authors=col("authors") or None,
+                          abstract=col("abstract") or None,
+                          year=year,
+                          doi=doi or None,
+                          venue=col("venue") or None,
+                          databases=database_name,
+                          source_type=source_type)
+            db.session.add(paper)
+            db.session.flush()  # get paper.id so we can add to lookup maps
             if ndoi:
-                existing_dois.add(ndoi)
+                doi_to_paper[ndoi] = paper
             if ntitle:
-                existing_titles.add(ntitle)
+                title_to_paper[ntitle] = paper
             if not doi:
                 no_doi += 1
             imported += 1
 
         db.session.commit()
-        for key in ("import_file", "import_columns", "import_preview", "import_source_type"):
+        for key in ("import_file", "import_columns", "import_preview",
+                    "import_source_type", "import_database_name"):
             session.pop(key, None)
 
-        msg = f"Imported {imported} paper(s). Skipped {skipped} (duplicates or empty rows)."
+        msg = f"Imported {imported} paper(s)."
+        if merged:
+            msg += f" {merged} duplicate(s) — database name merged into existing records."
+        if skipped:
+            msg += f" {skipped} row(s) skipped (no title or DOI)."
         if no_doi:
-            msg += f" {no_doi} paper(s) have no DOI — they are included but flagged."
+            msg += f" {no_doi} paper(s) have no DOI — flagged."
         flash(msg, "success")
         return redirect(url_for("project_dashboard", pid=pid))
 
     return render_template("column_map.html", project=project,
                            columns=columns, preview=preview,
-                           suggested=suggested, source_type=source_type)
+                           suggested=suggested, source_type=source_type,
+                           database_name=database_name)
 
 
 # ── Import assignment (papers from a LitReview assignment file) ───────────────
@@ -1603,21 +1666,34 @@ def review_paper(pid, stage, paper_id):
                                       reviewer_id=reviewer.id,
                                       stage=stage).first()
 
+    QUALITY_SCORES = ("high", "moderate", "low", "critically_low")
+
     if request.method == "POST":
         decision = request.form.get("decision")
         notes = request.form.get("notes", "").strip()
         exc_criteria = ",".join(request.form.getlist("exclusion_criteria"))
+        quality_score = request.form.get("quality_score", "").strip() or None
+        if quality_score not in QUALITY_SCORES:
+            quality_score = None
+
         if decision not in ("include", "exclude", "uncertain"):
             flash("Invalid decision.", "danger")
+        elif (stage == "fulltext"
+              and project.quality_assessment == "required"
+              and not quality_score):
+            flash("A quality score is required for full-text review in this project.", "warning")
         else:
             if existing:
                 existing.decision = decision
                 existing.notes = notes
                 existing.exclusion_criteria = exc_criteria
+                if stage == "fulltext":
+                    existing.quality_score = quality_score
             else:
                 db.session.add(Review(paper_id=paper_id, reviewer_id=reviewer.id,
                                       stage=stage, decision=decision,
-                                      notes=notes, exclusion_criteria=exc_criteria))
+                                      notes=notes, exclusion_criteria=exc_criteria,
+                                      quality_score=quality_score if stage == "fulltext" else None))
             db.session.commit()
             next_p = get_next_paper(reviewer.id, pid, stage)
             if next_p:
@@ -1661,6 +1737,7 @@ def review_paper(pid, stage, paper_id):
                            next_paper_id=next_paper_id,
                            active_pilot=active_pilot,
                            next_stage=next_stage,
+                           quality_assessment=project.quality_assessment,
                            kw_positive=_kw_list(project.highlight_positive),
                            kw_negative=_kw_list(project.highlight_negative),
                            kw_skip=_kw_list(project.highlight_skip))
@@ -1842,15 +1919,22 @@ def statistics(pid):
     project = Project.query.get_or_404(pid)
     total = Paper.query.filter_by(project_id=pid).count()
 
+    def _effective_decision(paper_id, stage):
+        """Return the effective decision for a paper at a stage (GroupDecision wins)."""
+        gd = GroupDecision.query.filter_by(paper_id=paper_id, stage=stage).first()
+        if gd:
+            return gd.decision
+        revs = Review.query.filter_by(paper_id=paper_id, stage=stage).all()
+        if not revs:
+            return None
+        return compute_consensus([r.decision for r in revs], project.threshold)
+
     funnel = [{"label": "Imported", "count": total}]
     for stage in STAGES:
         eligible = get_eligible_papers(pid, stage, threshold=project.threshold)
         passed = sum(
             1 for p in eligible
-            if passes_threshold(
-                Review.query.filter_by(paper_id=p.id, stage=stage).all(),
-                project.threshold
-            )
+            if _effective_decision(p.id, stage) in ('include', 'uncertain')
         )
         funnel.append({
             "label": STAGE_LABELS[stage],
@@ -1859,17 +1943,23 @@ def statistics(pid):
         })
 
     # Papers per year (based on furthest-reviewed stage with data)
-    stages_done = [s for s in STAGES
-                   if Review.query.join(Paper).filter(
-                       Paper.project_id == pid, Review.stage == s).count() > 0]
+    # A stage is "done" if any paper has a Review OR GroupDecision there
+    def _stage_has_data(s):
+        has_review = (Review.query.join(Paper)
+                      .filter(Paper.project_id == pid, Review.stage == s).count() > 0)
+        has_gd = (GroupDecision.query.join(Paper)
+                  .filter(Paper.project_id == pid, GroupDecision.stage == s).count() > 0)
+        return has_review or has_gd
+
+    stages_done = [s for s in STAGES if _stage_has_data(s)]
 
     papers_by_year = defaultdict(int)
     final_included = 0
     if stages_done:
         last = stages_done[-1]
         for paper in Paper.query.filter_by(project_id=pid).all():
-            reviews = Review.query.filter_by(paper_id=paper.id, stage=last).all()
-            if passes_threshold(reviews, project.threshold):
+            dec = _effective_decision(paper.id, last)
+            if dec in ('include', 'uncertain'):
                 final_included += 1
                 if paper.year:
                     papers_by_year[paper.year] += 1
@@ -1925,16 +2015,20 @@ def statistics(pid):
                 row["stages"][s] = None
         reviewer_decisions.append(row)
 
-    # --- Source / database breakdown ---
+    # --- Database / search engine breakdown ---
     source_counts = defaultdict(lambda: {"total": 0, "included": 0})
     last_stage = stages_done[-1] if stages_done else None
     for paper in Paper.query.filter_by(project_id=pid).all():
-        src = (paper.source or "Unknown").strip() or "Unknown"
-        source_counts[src]["total"] += 1
+        dbs = [d.strip() for d in (paper.databases or "").split("|") if d.strip()]
+        if not dbs:
+            dbs = ["Unknown"]
+        is_included = False
         if last_stage:
-            revs = Review.query.filter_by(paper_id=paper.id, stage=last_stage).all()
-            if passes_threshold(revs, project.threshold):
-                source_counts[src]["included"] += 1
+            is_included = _effective_decision(paper.id, last_stage) in ('include', 'uncertain')
+        for db in dbs:
+            source_counts[db]["total"] += 1
+            if is_included:
+                source_counts[db]["included"] += 1
     source_stats = sorted(source_counts.items(), key=lambda x: -x[1]["total"])
 
     # --- Uncertain papers still needing a decision ---
@@ -2151,8 +2245,10 @@ def decisions_overview(pid, stage):
     # Build per-paper display data
     paper_data = []
     for paper in papers:
-        rev_map = {r.reviewer_id: r.decision for r in
-                   Review.query.filter_by(paper_id=paper.id, stage=stage).all()}
+        reviews_at_stage = Review.query.filter_by(paper_id=paper.id, stage=stage).all()
+        rev_map = {r.reviewer_id: r.decision for r in reviews_at_stage}
+        quality_map = {r.reviewer_id: r.quality_score for r in reviews_at_stage
+                       if r.quality_score}
         group      = GroupDecision.query.filter_by(
             paper_id=paper.id, stage=stage).first()
         decisions  = list(rev_map.values())
@@ -2161,6 +2257,7 @@ def decisions_overview(pid, stage):
         paper_data.append({
             "paper":        paper,
             "rev_map":      rev_map,
+            "quality_map":  quality_map,
             "group":        group,
             "consensus":    consensus,
             "has_conflict": has_conflict,
@@ -2170,7 +2267,8 @@ def decisions_overview(pid, stage):
                            project=project, stage=stage,
                            stage_label=STAGE_LABELS[stage],
                            reviewers=reviewers,
-                           paper_data=paper_data)
+                           paper_data=paper_data,
+                           quality_assessment=project.quality_assessment)
 
 
 # ── Export ────────────────────────────────────────────────────────────────────
@@ -2197,7 +2295,8 @@ def export_papers(pid):
             "Authors": paper.authors,
             "Year": paper.year,
             "DOI": paper.doi,
-            "Source": paper.source,
+            "Venue": paper.venue,
+            "Databases": paper.databases,
             "Abstract": paper.abstract,
             "Decision": majority,
             "Notes": "; ".join(r.notes for r in reviews if r.notes),
@@ -2384,11 +2483,13 @@ def export_notes(pid):
             "Title":    paper.title   or "",
             "Authors":  paper.authors or "",
             "Year":     paper.year    or "",
-            "DOI":      paper.doi     or "",
-            "Source":   paper.source  or "",
-            "Reviewer": reviewer.name,
-            "Decision": rev.decision,
-            "Note":     rev.notes,
+            "DOI":       paper.doi       or "",
+            "Venue":     paper.venue     or "",
+            "Databases": paper.databases or "",
+            "Reviewer":      reviewer.name,
+            "Decision":      rev.decision,
+            "Quality Score": rev.quality_score or "",
+            "Note":          rev.notes,
         })
 
     df = pd.DataFrame(data)
@@ -2516,6 +2617,38 @@ with app.app_context():
             db.session.commit()
         except Exception:
             db.session.rollback()
+    # Migrate: quality assessment setting + quality score on reviews
+    try:
+        db.session.execute(text(
+            "ALTER TABLE projects ADD COLUMN quality_assessment VARCHAR(20) NOT NULL DEFAULT 'off'"
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    try:
+        db.session.execute(text("ALTER TABLE reviews ADD COLUMN quality_score VARCHAR(20)"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    # Migrate: venue + databases columns (venue backfilled from legacy source column)
+    try:
+        db.session.execute(text("ALTER TABLE papers ADD COLUMN venue TEXT"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    try:
+        db.session.execute(text("ALTER TABLE papers ADD COLUMN databases TEXT DEFAULT ''"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    # Backfill venue from old source column for existing rows
+    try:
+        db.session.execute(text(
+            "UPDATE papers SET venue = source WHERE venue IS NULL AND source IS NOT NULL"
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

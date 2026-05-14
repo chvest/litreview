@@ -63,6 +63,9 @@
             <th class="text-center" style="width:7rem">{{ r.name }}</th>
             {% endfor %}
             <th class="text-center" style="width:7rem">Consensus</th>
+            {% if stage == 'fulltext' and quality_assessment != 'off' %}
+            <th class="text-center" style="width:7rem">Quality</th>
+            {% endif %}
             <th style="min-width:10rem">
               Group override
               <i class="bi bi-info-circle text-muted ms-1"
@@ -107,6 +110,22 @@
               <span class="text-muted" style="font-size:.75rem">—</span>
               {% endif %}
             </td>
+            {% if stage == 'fulltext' and quality_assessment != 'off' %}
+            <td class="text-center">
+              {% set scores = pd.quality_map.values() | list %}
+              {% if scores %}
+                {% set qs_colors = {'high': 'success', 'moderate': 'primary', 'low': 'warning', 'critically_low': 'danger'} %}
+                {% set qs_labels = {'high': 'High', 'moderate': 'Mod', 'low': 'Low', 'critically_low': 'Crit'} %}
+                {% for qs in scores %}
+                <span class="badge bg-{{ qs_colors.get(qs, 'secondary') }}" style="font-size:.7rem">
+                  {{ qs_labels.get(qs, qs) }}
+                </span>
+                {% endfor %}
+              {% else %}
+              <span class="text-muted" style="font-size:.75rem">—</span>
+              {% endif %}
+            </td>
+            {% endif %}
             <td>
               <select name="override_{{ paper.id }}"
                       class="form-select form-select-sm override-sel">

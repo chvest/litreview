@@ -22,6 +22,13 @@
       <div class="card-body">
         <p class="text-muted">Match each field to a column in your file. Only <strong>Title</strong> or <strong>DOI</strong> is required.</p>
 
+        {% if database_name %}
+        <div class="alert alert-info py-2 small mb-3 d-flex align-items-center gap-2">
+          <i class="bi bi-search flex-shrink-0"></i>
+          Database: <strong>{{ database_name }}</strong> — will be recorded for every paper in this file.
+        </div>
+        {% endif %}
+
         {% if suggested %}
         <div class="alert alert-success py-2 small mb-3">
           <i class="bi bi-magic me-1"></i>
@@ -37,7 +44,7 @@
               ('col_abstract', 'Abstract',         False, 'bi-text-paragraph'),
               ('col_year',     'Publication Year', False, 'bi-calendar'),
               ('col_doi',      'DOI',              False, 'bi-link-45deg'),
-              ('col_source',   'Source / Database',False, 'bi-database'),
+              ('col_venue',    'Journal / Venue',  False, 'bi-journal-text'),
             ] %}
             {% for name, label, required, icon in fields %}
             {% set auto = suggested.get(name, '') %}
