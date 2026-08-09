@@ -2118,11 +2118,7 @@ def statistics(pid):
         n_eligible = n_included = n_excluded = n_uncertain = 0
         n_eligible = len(eligible_papers)
         for p in eligible_papers:
-            revs = Review.query.filter_by(paper_id=p.id, stage=s).all()
-            gd = GroupDecision.query.filter_by(paper_id=p.id, stage=s).first()
-            effective = gd.decision if gd else (
-                compute_consensus([r.decision for r in revs]) if revs else None
-            )
+            effective = _effective_decision(p.id, s)
             if effective == "include":    n_included  += 1
             elif effective == "exclude":  n_excluded  += 1
             elif effective == "uncertain":n_uncertain += 1
