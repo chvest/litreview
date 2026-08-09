@@ -226,18 +226,21 @@
         </label>
         <div class="d-flex gap-2 flex-wrap">
           {% set current_qs = existing.quality_score if existing else '' %}
-          {% for val, label, color in [
-            ('high',          'High',          'success'),
-            ('moderate',      'Moderate',      'primary'),
-            ('low',           'Low',           'warning'),
-            ('critically_low','Critically Low','danger'),
+          {% for val, label, color, hint in [
+            ('high',          'High',          'success', 'Rigorous design, minimal bias, results clearly reported and directly applicable.'),
+            ('moderate',      'Moderate',      'primary', 'Mostly sound methodology with minor limitations that do not seriously undermine the findings.'),
+            ('low',           'Low',           'warning', 'Notable methodological weaknesses or reporting gaps that limit confidence in the results.'),
+            ('critically_low','Critically Low','danger',  'Fundamental flaws in design, analysis, or reporting — findings should be interpreted with extreme caution.'),
           ] %}
           <div class="form-check form-check-inline mb-0">
             <input class="form-check-input" type="radio" name="quality_score"
                    id="qs_{{ val }}" value="{{ val }}"
                    {% if current_qs == val %}checked{% endif %}>
             <label class="form-check-label" for="qs_{{ val }}">
-              <span class="badge bg-{{ color }} fw-normal" style="font-size:.8rem">{{ label }}</span>
+              <span class="badge bg-{{ color }} fw-normal" style="font-size:.8rem"
+                    data-bs-toggle="tooltip" data-bs-placement="top" title="{{ hint }}">
+                {{ label }}
+              </span>
             </label>
           </div>
           {% endfor %}

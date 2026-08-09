@@ -94,6 +94,26 @@ class Review(db.Model):
     __table_args__ = (db.UniqueConstraint("paper_id", "reviewer_id", "stage"),)
 
 
+class Assignment(db.Model):
+    """Tracks what papers were sent to a reviewer in a generated assignment file."""
+    __tablename__ = "assignments"
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False)
+    reviewer_id = db.Column(db.Integer, db.ForeignKey("reviewers.id"), nullable=False)
+    stage = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reviewer = db.relationship("Reviewer", backref="assignments", lazy=True)
+    papers = db.relationship("AssignmentPaper", backref="assignment", lazy=True,
+                             cascade="all, delete-orphan")
+
+
+class AssignmentPaper(db.Model):
+    __tablename__ = "assignment_papers"
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey("assignments.id"), nullable=False)
+    paper_id = db.Column(db.Integer, db.ForeignKey("papers.id"), nullable=False)
+
+
 class ReviewOrder(db.Model):
     __tablename__ = "review_orders"
     id = db.Column(db.Integer, primary_key=True)
@@ -152,7 +172,8 @@ def get_active_pilot(project_id, stage):
     ).first()
 
 
-def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None):
+def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None,
+                        exclude_group_excluded=False):
     """Papers eligible for review at the given stage.
 
     title:    all papers
@@ -163,12 +184,18 @@ def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None):
     pilot papers are returned so the review flow stays within the pilot.
 
     threshold overrides the project-level setting when provided explicitly.
+
+    exclude_group_excluded: when True, papers that already have a GroupDecision
+    of 'exclude' at this stage are removed from the result. Use for assignment
+    generation and dashboard counts — not for the decisions overview, which needs
+    to show all papers so overrides can be changed.
     """
     if threshold is None:
         project = Project.query.get(project_id)
         threshold = (project.threshold if project and project.threshold else "any")
 
     all_papers = Paper.query.filter_by(project_id=project_id).all()
+
     def _passed_stage(paper, prev_stage):
         """Return True if paper passed prev_stage (GroupDecision override wins)."""
         gd = GroupDecision.query.filter_by(paper_id=paper.id, stage=prev_stage).first()
@@ -195,6 +222,14 @@ def get_eligible_papers(project_id, stage, ignore_pilot=False, threshold=None):
             if _passed_stage(paper, 'abstract'):
                 eligible.append(paper)
 
+    if exclude_group_excluded:
+        group_excluded_ids = {
+            gd.paper_id for gd in
+            GroupDecision.query.filter_by(stage=stage, decision='exclude')
+            .join(Paper).filter(Paper.project_id == project_id).all()
+        }
+        eligible = [p for p in eligible if p.id not in group_excluded_ids]
+
     if not ignore_pilot:
         pilot = get_active_pilot(project_id, stage)
         if pilot:
@@ -208,7 +243,7 @@ def ensure_review_order(reviewer_id, project_id, stage):
     """Create a randomized review order if one doesn't already exist."""
     if ReviewOrder.query.filter_by(reviewer_id=reviewer_id, stage=stage).first():
         return
-    papers = get_eligible_papers(project_id, stage)
+    papers = get_eligible_papers(project_id, stage, exclude_group_excluded=True)
     ids = [p.id for p in papers]
     random.shuffle(ids)
     for pos, paper_id in enumerate(ids):
@@ -817,7 +852,8 @@ def project_dashboard(pid):
     stages_info = {}
     all_reviewers = Reviewer.query.filter_by(project_id=pid).all()
     for stage in STAGES:
-        eligible = len(get_eligible_papers(pid, stage, ignore_pilot=True))
+        eligible = len(get_eligible_papers(pid, stage, ignore_pilot=True,
+                                           exclude_group_excluded=True))
         # Count papers that have either an individual Review OR a GroupDecision at this stage
         reviewed_via_review = {r.paper_id for r in (
             db.session.query(Review.paper_id)
@@ -1364,26 +1400,47 @@ def import_reviews_map(pid):
         if bad_value:  parts.append(f"{bad_value} rows had an unrecognised decision value")
         flash(". ".join(parts) + ".", "success" if imported else "warning")
 
-        # Warn if the reviewer is missing decisions for any expected papers.
-        # When a pilot is active, the expected set is just the pilot batch;
-        # otherwise it's all eligible papers for the stage.
+        # Warn if the reviewer is missing decisions for expected papers.
+        # Priority: pilot batch > latest assignment for this reviewer+stage > all eligible.
+        # If an assignment exists, only warn about papers in that assignment —
+        # not papers intentionally omitted from the assignment (e.g. round-robin splits).
         active_pilot = get_active_pilot(pid, stage)
         if active_pilot:
             expected_ids = {pp.paper_id for pp in active_pilot.papers}
             context = "pilot"
         else:
-            expected_ids = {p.id for p in get_eligible_papers(pid, stage, ignore_pilot=True)}
-            context = stage
+            latest_assignment = (Assignment.query
+                                 .filter_by(project_id=pid,
+                                            reviewer_id=reviewer.id,
+                                            stage=stage)
+                                 .order_by(Assignment.created_at.desc())
+                                 .first())
+            if latest_assignment:
+                expected_ids = {ap.paper_id for ap in latest_assignment.papers}
+                context = "assigned"
+            else:
+                expected_ids = {p.id for p in
+                                get_eligible_papers(pid, stage, ignore_pilot=True,
+                                                    exclude_group_excluded=True)}
+                context = stage
         reviewed_ids = {r.paper_id for r in
                         Review.query.filter_by(reviewer_id=reviewer.id, stage=stage)
                         .join(Paper).filter(Paper.project_id == pid).all()}
         missing = len(expected_ids - reviewed_ids)
         if missing:
-            flash(
-                f"⚠ {reviewer.name} is still missing decisions for {missing} "
-                f"{context} paper(s). You can import again or review them manually.",
-                "warning"
-            )
+            if context == "assigned":
+                flash(
+                    f"⚠ {reviewer.name} is missing decisions for {missing} paper(s) "
+                    f"from their last generated assignment. Import the completed file "
+                    f"again or review the remaining papers manually.",
+                    "warning"
+                )
+            else:
+                flash(
+                    f"⚠ {reviewer.name} is still missing decisions for {missing} "
+                    f"{context} paper(s). You can import again or review them manually.",
+                    "warning"
+                )
 
         return redirect(url_for("project_dashboard", pid=pid))
 
@@ -1619,7 +1676,8 @@ def review_start(pid, stage):
         paper_list = [(o.position + 1, o.paper, done_map.get(o.paper_id)) for o in orders]
 
     active_pilot    = get_active_pilot(pid, stage)
-    eligible_count  = len(get_eligible_papers(pid, stage, ignore_pilot=True))
+    eligible_count  = len(get_eligible_papers(pid, stage, ignore_pilot=True,
+                                              exclude_group_excluded=True))
     pilot_size      = len(active_pilot.papers) if active_pilot else 0
     return render_template("review_start.html", project=project,
                            reviewers=reviewers, reviewer=reviewer,
@@ -1797,7 +1855,8 @@ def pilot_overview(pid):
             "batch_size": batch_size,
             "completed_count": completed_count,
             "reviewer_progress": reviewer_progress,
-            "eligible_count": len(get_eligible_papers(pid, stage, ignore_pilot=True)),
+            "eligible_count": len(get_eligible_papers(pid, stage, ignore_pilot=True,
+                                                       exclude_group_excluded=True)),
         }
 
     return render_template("pilot.html", project=project, stage_data=stage_data,
@@ -2539,7 +2598,7 @@ def generate_assignment(pid):
         n = len(reviewer_ids)
         reviewers_per_paper = max(1, min(reviewers_per_paper, n))
 
-        eligible = get_eligible_papers(pid, stage)
+        eligible = get_eligible_papers(pid, stage, exclude_group_excluded=True)
 
         if paper_filter == "unreviewed":
             reviewed_ids = set()
@@ -2554,6 +2613,13 @@ def generate_assignment(pid):
 
         project_safe = project.name.replace(" ", "_")
 
+        def _save_assignment(reviewer_id, papers):
+            a = Assignment(project_id=pid, reviewer_id=reviewer_id, stage=stage)
+            db.session.add(a)
+            db.session.flush()
+            for p in papers:
+                db.session.add(AssignmentPaper(assignment_id=a.id, paper_id=p.id))
+
         # ── Single reviewer → one xlsx ─────────────────────────────────────────
         if n == 1:
             rv      = Reviewer.query.get(reviewer_ids[0])
@@ -2561,6 +2627,8 @@ def generate_assignment(pid):
             out     = os.path.join(app.config["UPLOAD_FOLDER"],
                                    f"assign_{pid}_{stage}_{rv_safe}.xlsx")
             _write_assignment_xlsx(out, eligible, pid)
+            _save_assignment(rv.id, eligible)
+            db.session.commit()
             return send_file(out, as_attachment=True,
                              download_name=f"{project_safe}_{stage}_{rv_safe}_assignment.xlsx")
 
@@ -2580,15 +2648,24 @@ def generate_assignment(pid):
                 tmp = os.path.join(app.config["UPLOAD_FOLDER"],
                                    f"_tmp_assign_{rid}.xlsx")
                 _write_assignment_xlsx(tmp, per_reviewer[rid], pid)
+                _save_assignment(rid, per_reviewer[rid])
                 zf.write(tmp, f"{project_safe}_{stage}_{rv_safe}_assignment.xlsx")
                 os.remove(tmp)
+        db.session.commit()
         buf.seek(0)
         return send_file(buf, as_attachment=True,
                          mimetype="application/zip",
                          download_name=f"{project_safe}_{stage}_assignments.zip")
 
+    # Build recent assignments for display (latest per reviewer × stage)
+    recent = (Assignment.query
+              .filter_by(project_id=pid)
+              .order_by(Assignment.created_at.desc())
+              .limit(50).all())
+
     return render_template("assign.html", project=project, reviewers=reviewers,
-                           stages=STAGES, stage_labels=STAGE_LABELS)
+                           stages=STAGES, stage_labels=STAGE_LABELS,
+                           recent_assignments=recent)
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────

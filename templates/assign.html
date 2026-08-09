@@ -104,6 +104,37 @@
   </div>
 
   <div class="col-lg-5">
+
+    {% if recent_assignments %}
+    <div class="card mb-4">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>Recent Assignments</h6>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Reviewer</th>
+              <th>Stage</th>
+              <th class="text-center">Papers</th>
+              <th>Generated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in recent_assignments %}
+            <tr>
+              <td class="small">{{ a.reviewer.name }}</td>
+              <td class="small text-muted">{{ stage_labels[a.stage] }}</td>
+              <td class="text-center small">{{ a.papers | length }}</td>
+              <td class="small text-muted">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card">
       <div class="card-body">
         <h6><i class="bi bi-info-circle me-2 text-info"></i>How it works</h6>

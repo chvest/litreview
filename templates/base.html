@@ -181,6 +181,13 @@ function syncThemeIcon(theme) {
 
 // Sync icon on every page load
 syncThemeIcon(document.documentElement.getAttribute('data-bs-theme') || 'light');
+
+// Initialise Bootstrap tooltips globally
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+    new bootstrap.Tooltip(el);
+  });
+});
 </script>
 
 {% block scripts %}{% endblock %}
