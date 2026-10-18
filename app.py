@@ -154,6 +154,18 @@ class GroupDecision(db.Model):
     __table_args__ = (db.UniqueConstraint("paper_id", "stage"),)
 
 
+class ExtractionField(db.Model):
+    """Custom data-extraction fields defined per project for full-text review."""
+    __tablename__ = "extraction_fields"
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    field_type = db.Column(db.String(20), default="text")   # text | number | boolean | select
+    options = db.Column(db.Text)                            # newline-separated for select type
+    sort_order = db.Column(db.Integer, default=0)
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 STAGES = ["title", "abstract", "fulltext"]
@@ -260,8 +272,13 @@ def get_next_paper(reviewer_id, project_id, stage):
               .all())
     reviewed_ids = {r.paper_id for r in
                     Review.query.filter_by(reviewer_id=reviewer_id, stage=stage).all()}
+    group_excluded_ids = {
+        gd.paper_id for gd in
+        GroupDecision.query.filter_by(stage=stage, decision='exclude')
+        .join(Paper).filter(Paper.project_id == project_id).all()
+    }
     for o in orders:
-        if o.paper_id not in reviewed_ids:
+        if o.paper_id not in reviewed_ids and o.paper_id not in group_excluded_ids:
             return o.paper
     return None
 
@@ -292,10 +309,24 @@ def get_next_paper_in_order(reviewer_id, stage, current_paper_id):
     return nxt.paper if nxt else None
 
 
-def stage_stats(reviewer_id, stage):
-    total = ReviewOrder.query.filter_by(reviewer_id=reviewer_id, stage=stage).count()
-    done = Review.query.filter_by(reviewer_id=reviewer_id, stage=stage).count()
-    return {"total": total, "done": done, "remaining": total - done}
+def stage_stats(reviewer_id, stage, project_id=None):
+    order_ids = {o.paper_id for o in
+                 ReviewOrder.query.filter_by(reviewer_id=reviewer_id, stage=stage).all()}
+    if project_id and order_ids:
+        group_excluded = {
+            gd.paper_id for gd in
+            GroupDecision.query.filter_by(stage=stage, decision='exclude')
+            .join(Paper).filter(Paper.project_id == project_id,
+                                Paper.id.in_(order_ids)).all()
+        }
+    else:
+        group_excluded = set()
+    total = len(order_ids) - len(group_excluded)
+    done_ids = {r.paper_id for r in
+                Review.query.filter_by(reviewer_id=reviewer_id, stage=stage).all()
+                if r.paper_id not in group_excluded}
+    done = len(done_ids)
+    return {"total": total, "done": done, "remaining": max(0, total - done)}
 
 
 def interpret_agreement(k):
@@ -1666,7 +1697,7 @@ def review_start(pid, stage):
     paper_list = []
     if reviewer:
         ensure_review_order(reviewer.id, pid, stage)
-        stats = stage_stats(reviewer.id, stage)
+        stats = stage_stats(reviewer.id, stage, project_id=pid)
         # Build ordered list with decision if any
         orders = (ReviewOrder.query
                   .filter_by(reviewer_id=reviewer.id, stage=stage)
@@ -1763,7 +1794,7 @@ def review_paper(pid, stage, paper_id):
                           .order_by(Criterion.sort_order, Criterion.id).all())
     exclusion_criteria = (Criterion.query.filter_by(project_id=pid, type="exclusion")
                           .order_by(Criterion.sort_order, Criterion.id).all())
-    stats = stage_stats(reviewer.id, stage)
+    stats = stage_stats(reviewer.id, stage, project_id=pid)
     order_entry = ReviewOrder.query.filter_by(reviewer_id=reviewer.id,
                                               paper_id=paper_id, stage=stage).first()
     position = (order_entry.position + 1) if order_entry else "?"
@@ -1805,7 +1836,7 @@ def review_paper(pid, stage, paper_id):
 def review_complete(pid, stage):
     project = Project.query.get_or_404(pid)
     reviewer = current_reviewer(pid)
-    stats = stage_stats(reviewer.id, stage) if reviewer else None
+    stats = stage_stats(reviewer.id, stage, project_id=pid) if reviewer else None
     decisions = {}
     if reviewer:
         for d in ("include", "exclude", "uncertain"):
@@ -2016,7 +2047,7 @@ def statistics(pid):
     final_included = 0
     if stages_done:
         last = stages_done[-1]
-        for paper in Paper.query.filter_by(project_id=pid).all():
+        for paper in get_eligible_papers(pid, last, ignore_pilot=True):
             dec = _effective_decision(paper.id, last)
             if dec in ('include', 'uncertain'):
                 final_included += 1
@@ -2662,6 +2693,132 @@ def generate_assignment(pid):
     return render_template("assign.html", project=project, reviewers=reviewers,
                            stages=STAGES, stage_labels=STAGE_LABELS,
                            recent_assignments=recent)
+
+
+# ── Data Extraction ───────────────────────────────────────────────────────────
+
+@app.route("/project/<int:pid>/extraction", methods=["GET", "POST"])
+def manage_extraction_fields(pid):
+    project = Project.query.get_or_404(pid)
+    fields = (ExtractionField.query.filter_by(project_id=pid)
+              .order_by(ExtractionField.sort_order, ExtractionField.id).all())
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        if action == "add":
+            name = request.form.get("name", "").strip()
+            description = request.form.get("description", "").strip()
+            field_type = request.form.get("field_type", "text")
+            options = request.form.get("options", "").strip()
+            if name:
+                max_sort = (db.session.query(db.func.max(ExtractionField.sort_order))
+                            .filter_by(project_id=pid).scalar() or 0)
+                db.session.add(ExtractionField(
+                    project_id=pid, name=name, description=description,
+                    field_type=field_type, options=options, sort_order=max_sort + 1
+                ))
+                db.session.commit()
+                flash("Field added.", "success")
+
+        elif action == "delete":
+            fid = request.form.get("field_id", type=int)
+            field = ExtractionField.query.get(fid)
+            if field and field.project_id == pid:
+                db.session.delete(field)
+                db.session.commit()
+                flash("Field deleted.", "success")
+
+        elif action == "move_up":
+            fid = request.form.get("field_id", type=int)
+            field = ExtractionField.query.get(fid)
+            if field and field.project_id == pid and field.sort_order > 1:
+                prev = (ExtractionField.query.filter_by(project_id=pid)
+                        .filter(ExtractionField.sort_order < field.sort_order)
+                        .order_by(ExtractionField.sort_order.desc()).first())
+                if prev:
+                    field.sort_order, prev.sort_order = prev.sort_order, field.sort_order
+                    db.session.commit()
+
+        return redirect(url_for("manage_extraction_fields", pid=pid))
+
+    # Count fulltext-included papers (same logic as export)
+    def _eff_ft(paper_id):
+        gd = GroupDecision.query.filter_by(paper_id=paper_id, stage='fulltext').first()
+        if gd:
+            return gd.decision
+        revs = Review.query.filter_by(paper_id=paper_id, stage='fulltext').all()
+        if not revs:
+            return None
+        return compute_consensus([r.decision for r in revs], project.threshold)
+
+    included_count = sum(
+        1 for p in get_eligible_papers(pid, 'fulltext', ignore_pilot=True)
+        if _eff_ft(p.id) in ('include', 'uncertain')
+    )
+
+    return render_template("extraction_fields.html", project=project,
+                           fields=fields, included_count=included_count)
+
+
+@app.route("/project/<int:pid>/extraction/export")
+def export_extraction_excel(pid):
+    project = Project.query.get_or_404(pid)
+    fields = (ExtractionField.query.filter_by(project_id=pid)
+              .order_by(ExtractionField.sort_order, ExtractionField.id).all())
+
+    eligible = get_eligible_papers(pid, 'fulltext', ignore_pilot=True)
+
+    def _eff(paper_id):
+        gd = GroupDecision.query.filter_by(paper_id=paper_id, stage='fulltext').first()
+        if gd:
+            return gd.decision
+        revs = Review.query.filter_by(paper_id=paper_id, stage='fulltext').all()
+        if not revs:
+            return None
+        return compute_consensus([r.decision for r in revs], project.threshold)
+
+    papers = [p for p in eligible if _eff(p.id) in ('include', 'uncertain')]
+
+    rows = []
+    for p in papers:
+        row = {
+            "#":       p.id,
+            "Title":   p.title or "",
+            "Authors": p.authors or "",
+            "Year":    p.year or "",
+            "DOI":     p.doi or "",
+            "Venue":   p.venue or "",
+        }
+        for f in fields:
+            row[f.name] = ""
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Extraction")
+        ws = writer.sheets["Extraction"]
+        # Auto-width columns
+        for col_cells in ws.columns:
+            max_len = max((len(str(c.value or "")) for c in col_cells), default=10)
+            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 60)
+        # Add field descriptions as comments if available
+        from openpyxl.comments import Comment
+        base_col = 7  # columns A-F are metadata
+        for i, f in enumerate(fields):
+            if f.description:
+                cell = ws.cell(row=1, column=base_col + i)
+                cell.comment = Comment(f.description, "LitReview")
+        # Freeze header row
+        ws.freeze_panes = "A2"
+    buf.seek(0)
+
+    safe_name = "".join(c for c in project.name if c.isalnum() or c in " _-")[:40]
+    filename = f"extraction_{safe_name}_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"
+    return send_file(buf, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────

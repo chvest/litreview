@@ -82,7 +82,7 @@
           </ul>
         </li>
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle{% if request.endpoint in ('pilot_overview', 'generate_assignment') %} active{% endif %}"
+          <a class="nav-link dropdown-toggle{% if request.endpoint in ('pilot_overview', 'generate_assignment', 'manage_extraction_fields', 'export_extraction_excel') %} active{% endif %}"
              href="#" role="button" data-bs-toggle="dropdown">
             <i class="bi bi-calendar-check me-1"></i>Plan
           </a>
@@ -92,6 +92,10 @@
             </a></li>
             <li><a class="dropdown-item" href="{{ url_for('generate_assignment', pid=project.id) }}">
               <i class="bi bi-person-check me-2"></i>Generate Assignment
+            </a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="{{ url_for('manage_extraction_fields', pid=project.id) }}">
+              <i class="bi bi-card-list me-2"></i>Data Extraction
             </a></li>
           </ul>
         </li>

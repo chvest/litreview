@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Data Extraction — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Data Extraction</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+
+  <!-- Left: field list + add form -->
+  <div class="col-lg-7">
+
+    <!-- Defined fields -->
+    <div class="card mb-4">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-card-list me-2 text-primary"></i>Extraction Fields</h5>
+        {% if fields %}
+        <a href="{{ url_for('export_extraction_excel', pid=project.id) }}"
+           class="btn btn-success btn-sm">
+          <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+        </a>
+        {% endif %}
+      </div>
+
+      {% if fields %}
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:2.5rem"></th>
+              <th>Field name</th>
+              <th>Type</th>
+              <th>Description</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in fields %}
+            <tr>
+              <td class="text-muted small align-middle text-center">{{ loop.index }}</td>
+              <td class="align-middle fw-semibold">{{ f.name }}</td>
+              <td class="align-middle">
+                <span class="badge bg-secondary fw-normal">{{ f.field_type }}</span>
+                {% if f.field_type == 'select' and f.options %}
+                <div class="small text-muted mt-1" style="font-size:.75rem">
+                  {{ f.options.replace('\n', ' · ') }}
+                </div>
+                {% endif %}
+              </td>
+              <td class="align-middle small text-muted">{{ f.description or '—' }}</td>
+              <td class="align-middle text-end">
+                <form method="post" class="d-inline">
+                  <input type="hidden" name="action" value="move_up">
+                  <input type="hidden" name="field_id" value="{{ f.id }}">
+                  <button class="btn btn-link btn-sm p-0 text-muted"
+                          title="Move up" {% if loop.first %}disabled{% endif %}>
+                    <i class="bi bi-arrow-up"></i>
+                  </button>
+                </form>
+                <form method="post" class="d-inline ms-1"
+                      onsubmit="return confirm('Delete field «{{ f.name }}»?')">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="field_id" value="{{ f.id }}">
+                  <button class="btn btn-link btn-sm p-0 text-danger" title="Delete">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body text-muted small">
+        No fields defined yet. Add fields below.
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Add field form -->
+    <div class="card">
+      <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-plus-circle me-2 text-success"></i>Add Field</h6>
+      </div>
+      <div class="card-body">
+        <form method="post">
+          <input type="hidden" name="action" value="add">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Field name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control form-control-sm"
+                     placeholder="e.g. Sample size" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small">Type</label>
+              <select name="field_type" id="fieldTypeSelect" class="form-select form-select-sm">
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="boolean">Yes / No</option>
+                <option value="select">Select (list)</option>
+              </select>
+            </div>
+            <div class="col-md-3" id="optionsCol" style="display:none">
+              <label class="form-label fw-semibold small">Options</label>
+              <textarea name="options" class="form-control form-control-sm" rows="2"
+                        placeholder="One option per line"></textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold small">Description <span class="text-muted">(optional)</span></label>
+              <input type="text" name="description" class="form-control form-control-sm"
+                     placeholder="Shown as a tooltip in the exported Excel">
+            </div>
+            <div class="col-12">
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus me-1"></i>Add field
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right: info / export -->
+  <div class="col-lg-5">
+    <div class="card mb-4">
+      <div class="card-body">
+        <h6><i class="bi bi-info-circle me-2 text-info"></i>How it works</h6>
+        <ol class="small text-muted mb-3 ps-3">
+          <li class="mb-2">
+            Define the data you want to extract from each included paper —
+            e.g. <em>Sample size</em>, <em>Country</em>, <em>Risk of bias</em>.
+          </li>
+          <li class="mb-2">
+            Click <strong>Export Excel</strong>. You get a spreadsheet with one row
+            per included full-text paper and one column per field, ready to fill in.
+          </li>
+          <li class="mb-2">
+            Distribute the file to reviewers and have them fill in the extraction columns.
+          </li>
+        </ol>
+        <div class="alert alert-secondary py-2 small mb-0">
+          <i class="bi bi-lightbulb me-1"></i>
+          <strong>Tip:</strong> descriptions become Excel tooltips on the column headers,
+          helping reviewers know what to enter.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="text-center">
+          <div class="fs-3 fw-bold text-success">{{ included_count }}</div>
+          <div class="small text-muted mb-3">included papers available for extraction</div>
+          {% if included_count > 0 and fields %}
+          <a href="{{ url_for('export_extraction_excel', pid=project.id) }}"
+             class="btn btn-success">
+            <i class="bi bi-file-earmark-excel me-1"></i>Export Extraction Sheet
+          </a>
+          {% elif included_count == 0 %}
+          <p class="text-muted small">Complete the full-text review stage first.</p>
+          {% else %}
+          <p class="text-muted small">Add at least one field to enable export.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const typeSelect = document.getElementById('fieldTypeSelect');
+const optionsCol = document.getElementById('optionsCol');
+typeSelect.addEventListener('change', function () {
+  optionsCol.style.display = this.value === 'select' ? '' : 'none';
+});
+</script>
+{% endblock %}
