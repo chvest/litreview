@@ -2780,15 +2780,26 @@ def export_extraction_excel(pid):
 
     papers = [p for p in eligible if _eff(p.id) in ('include', 'uncertain')]
 
+    # Build paper → assigned reviewer names from the most recent fulltext assignments
+    paper_reviewers: dict[int, list[str]] = {}
+    ft_assignments = (Assignment.query.filter_by(project_id=pid, stage='fulltext')
+                      .order_by(Assignment.created_at).all())
+    for asgn in ft_assignments:
+        for ap in asgn.papers:
+            paper_reviewers.setdefault(ap.paper_id, [])
+            rname = asgn.reviewer.name
+            if rname not in paper_reviewers[ap.paper_id]:
+                paper_reviewers[ap.paper_id].append(rname)
+
     rows = []
     for p in papers:
         row = {
-            "#":       p.id,
-            "Title":   p.title or "",
-            "Authors": p.authors or "",
-            "Year":    p.year or "",
-            "DOI":     p.doi or "",
-            "Venue":   p.venue or "",
+            "DOI":      p.doi or "",
+            "Title":    p.title or "",
+            "Reviewer": ", ".join(paper_reviewers.get(p.id, [])),
+            "Authors":  p.authors or "",
+            "Year":     p.year or "",
+            "Venue":    p.venue or "",
         }
         for f in fields:
             row[f.name] = ""
@@ -2806,7 +2817,7 @@ def export_extraction_excel(pid):
             ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 60)
         # Add field descriptions as comments if available
         from openpyxl.comments import Comment
-        base_col = 7  # columns A-F are metadata
+        base_col = 7  # columns A-F are metadata (DOI, Title, Reviewer, Authors, Year, Venue)
         for i, f in enumerate(fields):
             if f.description:
                 cell = ws.cell(row=1, column=base_col + i)
