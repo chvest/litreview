@@ -20,9 +20,15 @@
         </a>
       </li>
       <li>
+        <a class="dropdown-item" href="{{ url_for('add_paper_manual', pid=project.id, source_type='snowball') }}">
+          <i class="bi bi-plus-circle me-2"></i>Add Snowballed Paper
+          <span class="text-muted small d-block" style="margin-top:-.15rem">Enter one paper manually, with DOI auto-fill</span>
+        </a>
+      </li>
+      <li>
         <a class="dropdown-item" href="{{ url_for('import_papers', pid=project.id, source_type='snowball') }}">
-          <i class="bi bi-diagram-3 me-2"></i>Import Snowballed Papers
-          <span class="text-muted small d-block" style="margin-top:-.15rem">References of included papers (skips title review)</span>
+          <i class="bi bi-diagram-3 me-2"></i>Import Snowballed Papers (bulk)
+          <span class="text-muted small d-block" style="margin-top:-.15rem">Upload a file — skips title review</span>
         </a>
       </li>
       <li>
@@ -101,7 +107,13 @@
         <div class="card-body d-flex flex-column align-items-center justify-content-center">
           <div class="display-5 fw-bold text-primary">{{ total }}</div>
           <div class="text-muted small mt-1">Papers imported</div>
-          <div class="small text-primary mt-2" style="font-size:.75rem">View all →</div>
+          <div class="small mt-2" style="font-size:.75rem">
+            <span class="text-muted">{{ search_count }} search</span>
+            {% if snowball_count %}
+            <span class="text-muted"> · </span>
+            <span class="text-info">{{ snowball_count }} snowball</span>
+            {% endif %}
+          </div>
         </div>
       </div>
     </a>

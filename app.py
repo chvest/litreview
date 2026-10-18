@@ -922,9 +922,67 @@ def project_dashboard(pid):
 
     reviewers = Reviewer.query.filter_by(project_id=pid).all()
     criteria_count = Criterion.query.filter_by(project_id=pid).count()
+    search_count   = Paper.query.filter_by(project_id=pid, source_type='search').count()
+    snowball_count = Paper.query.filter_by(project_id=pid, source_type='snowball').count()
     return render_template("project.html", project=project, total=total,
+                           search_count=search_count, snowball_count=snowball_count,
                            stages_info=stages_info, reviewers=reviewers,
                            criteria_count=criteria_count)
+
+
+# ── Manual paper entry ────────────────────────────────────────────────────────
+
+@app.route("/project/<int:pid>/add-paper", methods=["GET", "POST"])
+def add_paper_manual(pid):
+    project = Project.query.get_or_404(pid)
+    source_type = request.args.get("source_type", "snowball")
+    if source_type not in ("search", "snowball"):
+        source_type = "snowball"
+
+    if request.method == "POST":
+        source_type = request.form.get("source_type", "snowball")
+        title    = request.form.get("title", "").strip()
+        authors  = request.form.get("authors", "").strip()
+        year_str = request.form.get("year", "").strip()
+        doi      = request.form.get("doi", "").strip()
+        abstract = request.form.get("abstract", "").strip()
+        venue    = request.form.get("venue", "").strip()
+        found_in = request.form.get("found_in", "").strip()
+
+        year = None
+        if year_str:
+            try:
+                year = int(year_str)
+            except ValueError:
+                pass
+
+        if doi:
+            existing = Paper.query.filter_by(project_id=pid, doi=doi).first()
+            if existing:
+                flash(f"A paper with DOI {doi} already exists in this project.", "warning")
+                return redirect(url_for("add_paper_manual", pid=pid, source_type=source_type))
+
+        paper = Paper(
+            project_id=pid,
+            title=title,
+            authors=authors,
+            year=year,
+            doi=doi or None,
+            abstract=abstract,
+            venue=venue,
+            databases=found_in,
+            source_type=source_type,
+        )
+        db.session.add(paper)
+        db.session.commit()
+        flash(f"Paper added: {(title or '(no title)')[:60]}", "success")
+
+        if request.form.get("add_another"):
+            return redirect(url_for("add_paper_manual", pid=pid, source_type=source_type))
+        return redirect(url_for("paper_list", pid=pid))
+
+    return render_template("add_paper_manual.html", project=project,
+                           source_type=source_type)
 
 
 # ── Import ────────────────────────────────────────────────────────────────────

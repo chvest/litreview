@@ -15,6 +15,17 @@
     <span class="badge bg-secondary fs-6 ms-2" id="count-badge">{{ papers|length }}</span>
   </h4>
 
+  <!-- Source filter -->
+  <div class="btn-group btn-group-sm" id="sourceFilter" role="group">
+    <button type="button" class="btn btn-outline-secondary active" data-source="all">All</button>
+    <button type="button" class="btn btn-outline-secondary" data-source="search">
+      <i class="bi bi-search me-1"></i>Search
+    </button>
+    <button type="button" class="btn btn-outline-info" data-source="snowball">
+      <i class="bi bi-diagram-3 me-1"></i>Snowball
+    </button>
+  </div>
+
   <!-- Search -->
   <input type="search" id="paper-search" class="form-control" style="max-width:22rem"
          placeholder="Search title, authors, DOI…" autocomplete="off">
@@ -26,6 +37,11 @@
       <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>No DOI only
     </label>
   </div>
+
+  <a href="{{ url_for('add_paper_manual', pid=project.id, source_type='snowball') }}"
+     class="btn btn-sm btn-outline-info">
+    <i class="bi bi-plus me-1"></i>Add snowball
+  </a>
 </div>
 
 {% if papers %}
@@ -47,12 +63,17 @@
         </thead>
         <tbody>
           {% for paper in papers %}
-          <tr class="paper-row" data-nodoi="{{ '1' if not paper.doi else '0' }}">
+          <tr class="paper-row" data-nodoi="{{ '1' if not paper.doi else '0' }}"
+              data-source="{{ paper.source_type or 'search' }}">
             <td class="text-muted small">{{ loop.index }}</td>
             <td>
               {% if not paper.doi %}
               <i class="bi bi-exclamation-triangle-fill text-warning me-1"
                  title="No DOI — duplicate detection is less reliable" style="font-size:.8rem"></i>
+              {% endif %}
+              {% if paper.source_type == 'snowball' %}
+              <span class="badge bg-info text-dark fw-normal me-1" style="font-size:.65rem"
+                    title="Identified through snowballing">snowball</span>
               {% endif %}
               <span class="paper-title">{{ paper.title or '(no title)' }}</span>
               {% if paper.abstract %}
@@ -130,6 +151,17 @@ const nodoiFilter  = document.getElementById('no-doi-filter');
 const countBadge   = document.getElementById('count-badge');
 const noResults    = document.getElementById('no-results');
 const rows         = document.querySelectorAll('.paper-row');
+const sourceFilter = document.getElementById('sourceFilter');
+let   activeSource = 'all';
+
+sourceFilter.addEventListener('click', e => {
+  const btn = e.target.closest('[data-source]');
+  if (!btn) return;
+  activeSource = btn.dataset.source;
+  sourceFilter.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+});
 
 function applyFilters() {
   const q       = (searchInput.value || '').toLowerCase();
@@ -141,11 +173,13 @@ function applyFilters() {
     const authors = (row.querySelector('.paper-authors')?.textContent || '').toLowerCase();
     const doi     = (row.querySelector('.paper-doi')?.textContent     || '').toLowerCase();
     const nodoi   = row.dataset.nodoi === '1';
+    const src     = row.dataset.source || 'search';
 
-    const matchesSearch = !q || title.includes(q) || authors.includes(q) || doi.includes(q);
-    const matchesFilter = !nodoiOn || nodoi;
+    const matchesSearch  = !q || title.includes(q) || authors.includes(q) || doi.includes(q);
+    const matchesFilter  = !nodoiOn || nodoi;
+    const matchesSource  = activeSource === 'all' || src === activeSource;
 
-    if (matchesSearch && matchesFilter) {
+    if (matchesSearch && matchesFilter && matchesSource) {
       row.style.display = '';
       visible++;
     } else {

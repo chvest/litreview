@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Add Paper — {{ project.name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('project_dashboard', pid=project.id) }}">{{ project.name }}</a></li>
+    <li class="breadcrumb-item active">Add Paper</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header bg-white">
+        <h5 class="mb-0">
+          <i class="bi bi-plus-circle me-2 text-primary"></i>
+          {% if source_type == 'snowball' %}Add Snowballed Paper{% else %}Add Paper Manually{% endif %}
+        </h5>
+      </div>
+      <div class="card-body">
+
+        <!-- Source type selector -->
+        <div class="mb-4">
+          <label class="form-label fw-semibold small">Source</label>
+          <div class="d-flex gap-3">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="source_type_sel"
+                     id="st_snowball" value="snowball"
+                     {% if source_type == 'snowball' %}checked{% endif %}>
+              <label class="form-check-label" for="st_snowball">
+                <i class="bi bi-diagram-3 me-1 text-info"></i>Snowball
+                <span class="text-muted small d-block">Found in a reference list</span>
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="source_type_sel"
+                     id="st_search" value="search"
+                     {% if source_type == 'search' %}checked{% endif %}>
+              <label class="form-check-label" for="st_search">
+                <i class="bi bi-search me-1 text-secondary"></i>Database search
+                <span class="text-muted small d-block">From a systematic search</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- DOI lookup -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold small">DOI <span class="text-muted">(optional — paste to auto-fill)</span></label>
+          <div class="input-group">
+            <input type="text" id="doi-input" class="form-control"
+                   placeholder="e.g. 10.1016/j.jss.2020.05.001">
+            <button type="button" class="btn btn-outline-secondary" id="doi-lookup-btn">
+              <i class="bi bi-search me-1"></i>Look up
+            </button>
+          </div>
+          <div id="doi-status" class="form-text"></div>
+        </div>
+
+        <form method="post" id="paper-form">
+          <input type="hidden" name="source_type" id="source_type_hidden" value="{{ source_type }}">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small" for="f-title">Title <span class="text-danger">*</span></label>
+            <input type="text" name="title" id="f-title" class="form-control" required
+                   placeholder="Publication title">
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-9">
+              <label class="form-label fw-semibold small" for="f-authors">Authors</label>
+              <input type="text" name="authors" id="f-authors" class="form-control"
+                     placeholder="e.g. Smith J, Jones A, …">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold small" for="f-year">Year</label>
+              <input type="number" name="year" id="f-year" class="form-control"
+                     placeholder="2023" min="1900" max="2100">
+            </div>
+          </div>
+
+          <input type="hidden" name="doi" id="f-doi">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small" for="f-venue">Journal / Proceedings</label>
+            <input type="text" name="venue" id="f-venue" class="form-control"
+                   placeholder="e.g. Journal of Software Engineering">
+          </div>
+
+          <div class="mb-3" id="found-in-row"
+               style="{{ 'display:none' if source_type == 'search' else '' }}">
+            <label class="form-label fw-semibold small" for="f-found-in">Found in</label>
+            <input type="text" name="found_in" id="f-found-in" class="form-control"
+                   placeholder="e.g. Smith et al. 2020 (DOI or citation)">
+            <div class="form-text">Which paper's reference list led you here?</div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold small" for="f-abstract">Abstract</label>
+            <textarea name="abstract" id="f-abstract" class="form-control" rows="5"
+                      placeholder="Paste the abstract here (optional but recommended)"></textarea>
+          </div>
+
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-plus-circle me-1"></i>Add paper
+            </button>
+            <button type="submit" name="add_another" value="1" class="btn btn-outline-primary">
+              <i class="bi bi-arrow-repeat me-1"></i>Add &amp; add another
+            </button>
+            <a href="{{ url_for('paper_list', pid=project.id) }}"
+               class="btn btn-outline-secondary ms-auto">Cancel</a>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-3">
+    <div class="card">
+      <div class="card-body small text-muted">
+        <h6 class="text-body"><i class="bi bi-info-circle me-2 text-info"></i>Tips</h6>
+        <ul class="ps-3 mb-0">
+          <li class="mb-2">Paste the DOI and click <strong>Look up</strong> to auto-fill from CrossRef.</li>
+          <li class="mb-2">Snowball papers enter the review at the <strong>abstract stage</strong> — they skip title screening.</li>
+          <li>Use <strong>Add &amp; add another</strong> to enter multiple papers in a row.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Keep hidden source_type in sync with radio selection
+document.querySelectorAll('[name="source_type_sel"]').forEach(function(r) {
+  r.addEventListener('change', function() {
+    document.getElementById('source_type_hidden').value = this.value;
+    document.getElementById('found-in-row').style.display =
+      this.value === 'snowball' ? '' : 'none';
+  });
+});
+
+// DOI lookup via CrossRef
+document.getElementById('doi-lookup-btn').addEventListener('click', async function() {
+  const raw = document.getElementById('doi-input').value.trim();
+  if (!raw) return;
+  // Strip https://doi.org/ prefix if pasted as a URL
+  const doi = raw.replace(/^https?:\/\/doi\.org\//i, '');
+  const statusEl = document.getElementById('doi-status');
+  statusEl.textContent = 'Looking up…';
+  this.disabled = true;
+  try {
+    const resp = await fetch('https://api.crossref.org/works/' + encodeURIComponent(doi));
+    if (!resp.ok) throw new Error('Not found');
+    const data = await resp.json();
+    const msg  = data.message;
+
+    document.getElementById('f-doi').value    = doi;
+    document.getElementById('f-title').value  = (msg.title || [''])[0];
+    document.getElementById('f-authors').value =
+      (msg.author || []).slice(0, 8)
+        .map(a => (a.family || '') + (a.given ? ', ' + a.given.charAt(0) + '.' : ''))
+        .join('; ');
+    const issued = (msg.issued || {})['date-parts'];
+    if (issued && issued[0]) document.getElementById('f-year').value = issued[0][0];
+    const venue = (msg['container-title'] || [])[0] || '';
+    document.getElementById('f-venue').value = venue;
+    if (msg.abstract) {
+      // CrossRef sometimes wraps abstract in jats: tags — strip them
+      document.getElementById('f-abstract').value =
+        msg.abstract.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    statusEl.className = 'form-text text-success';
+    statusEl.textContent = '✓ Metadata filled from CrossRef';
+  } catch (e) {
+    statusEl.className = 'form-text text-danger';
+    statusEl.textContent = 'DOI not found in CrossRef — fill in manually.';
+  } finally {
+    this.disabled = false;
+  }
+});
+
+// Also trigger lookup on Enter in the DOI field
+document.getElementById('doi-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('doi-lookup-btn').click();
+  }
+});
+</script>
+{% endblock %}
